@@ -22,19 +22,18 @@ pip install -r requirements.txt
 
 Exact commands for all experiments are provided in `experiment_commands.json`.
 
-| Experiment | Main output |
-| --- | --- |
-| Main hybrid GNN | `metrics.json` |
-| Nested cross-validation | `nested_cv_results.json` |
-| Inductive sensitivity analysis | `inductive_results.json` |
-| Machine-learning baselines | `baseline_summary.csv` |
-| Architectural ablations | `metrics.json` |
-| Patient-level interpretation and verification | `verification_summary.csv` |
-| FLAN-T5 evaluation | evaluation summaries |
-| RAG follow-up evaluation | `rag_followup_summary.json` |
+| Experiment | Expected output | Manuscript support |
+| --- | --- | --- |
+| Main hybrid GNN | `metrics.json` | Table 3 |
+| Nested cross-validation | `nested_cv_results.json` | Table 3 |
+| Inductive sensitivity analysis | `inductive/inductive_results.json` | Table 3 |
+| Machine-learning baselines | `baseline_summary.csv` | Table 4 |
+| Architectural ablations | `metrics.json` | Table 5 |
+| CDR leakage analyses | experiment summary outputs | Table 6 |
+| Patient-level interpretation and verification | `verification_summary.csv` | Table 7 |
+| FLAN-T5 evaluation | evaluation summary outputs | Table 7 |
+| RAG follow-up evaluation | `rag_followup_summary.json` | Section 4.5 |
 
 ## Data availability
 
 The data used in this study were obtained from the Alzheimer's Disease Neuroimaging Initiative (ADNI) and are not distributed through this repository due to ADNI data-use restrictions.
-
-Authorized ADNI users can recreate the study inputs using the cohort and preprocessing details described in the manuscript.
