@@ -1,27 +1,31 @@
 {
-  "main_model": "python hybrid_gnn.py --single adni_diagnosis_dxsum_no_cdr.csv --out_dir results/main_model --verbose",
+  "main_model": "python hybrid_gnn.py --single study_data_no_cdr.csv --out_dir results/main_model --verbose",
 
-  "nested_cv": "python hybrid_gnn.py --single adni_diagnosis_dxsum_no_cdr.csv --out_dir results/nested_cv --nested_cv --no_explain --verbose",
+  "nested_cv": "python hybrid_gnn.py --single study_data_no_cdr.csv --out_dir results/nested_cv --nested_cv --no_explain --verbose",
 
-  "inductive_analysis": "python hybrid_gnn.py --single adni_diagnosis_dxsum_no_cdr.csv --out_dir results/inductive --eval_mode inductive --verbose",
+  "inductive_analysis": "python hybrid_gnn.py --single study_data_no_cdr.csv --out_dir results/inductive --eval_mode inductive --verbose",
 
-  "ablation_no_temporal": "python hybrid_gnn.py --single adni_diagnosis_dxsum_no_cdr.csv --out_dir results/ablation_no_temporal --no_temporal_branch --verbose",
+  "ablation_no_temporal": "python hybrid_gnn.py --single study_data_no_cdr.csv --out_dir results/ablation_no_temporal --no_temporal_branch --verbose",
 
-  "ablation_no_mlp": "python hybrid_gnn.py --single adni_diagnosis_dxsum_no_cdr.csv --out_dir results/ablation_no_mlp --no_mlp_branch --verbose",
+  "ablation_no_mlp": "python hybrid_gnn.py --single study_data_no_cdr.csv --out_dir results/ablation_no_mlp --no_mlp_branch --verbose",
 
-  "ablation_population_gcn": "python hybrid_gnn.py --single adni_diagnosis_dxsum_no_cdr.csv --out_dir results/ablation_population_gcn --no_mlp_branch --no_temporal_branch --verbose",
+  "ablation_population_gcn": "python hybrid_gnn.py --single study_data_no_cdr.csv --out_dir results/ablation_population_gcn --no_mlp_branch --no_temporal_branch --verbose",
+
+  "cdr_node_feature_only": "python hybrid_gnn.py --single study_data_with_cdr.csv --out_dir results/cdr_node_feature_only --verbose",
+
+  "cdr_node_and_edge_features": "python hybrid_gnn.py --single study_data_with_cdr.csv --out_dir results/cdr_node_and_edge_features --edge_ablation cognition_cdr --verbose",
 
   "baseline_models": "python baseline_comparison.py",
 
-  "template_interpretation": "python bio_leaflet.py --results_dir results/main_model --data_csv adni_diagnosis_dxsum_no_cdr.csv --out_dir results/interpretations --verbose",
+  "template_interpretation": "python bio_leaflet.py --results_dir results/main_model --data_csv study_data_no_cdr.csv --out_dir results/interpretations --verbose",
 
-  "flan_t5_train": "python ADNIT5.py train --results_dir results/main_model --data_csv adni_diagnosis_dxsum_no_cdr.csv --output_dir flan-t5-adni",
+  "flan_t5_train": "python ADNIT5.py train --results_dir results/main_model --data_csv study_data_no_cdr.csv --output_dir flan-t5-adni",
 
-  "flan_t5_generate": "python ADNIT5.py generate --results_dir results/main_model --data_csv adni_diagnosis_dxsum_no_cdr.csv --model_path flan-t5-adni --out_dir results/interpretations",
+  "flan_t5_generate": "python ADNIT5.py generate --results_dir results/main_model --data_csv study_data_no_cdr.csv --model_path flan-t5-adni --out_dir results/interpretations",
 
-  "flan_t5_audit": "python ADNIT5.py audit --results_dir results/main_model --data_csv adni_diagnosis_dxsum_no_cdr.csv --model_path flan-t5-adni --out_dir results/audit",
+  "flan_t5_audit": "python ADNIT5.py audit --results_dir results/main_model --data_csv study_data_no_cdr.csv --model_path flan-t5-adni --out_dir results/audit",
 
-  "flan_t5_evaluate": "python ADNIT5.py evaluate --results_dir results/main_model --data_csv adni_diagnosis_dxsum_no_cdr.csv --model_path flan-t5-adni --out_dir results/flan_t5_evaluation",
+  "flan_t5_evaluate": "python ADNIT5.py evaluate --results_dir results/main_model --data_csv study_data_no_cdr.csv --model_path flan-t5-adni --out_dir results/flan_t5_evaluation",
 
   "rag_evaluation": "python run_bioleaflet_rag_prototype.py --bioleaflets results/interpretations/bioleaflets.csv --knowledge_base bioleaflet_rag_knowledge_base.json --out_dir results/rag"
 }
