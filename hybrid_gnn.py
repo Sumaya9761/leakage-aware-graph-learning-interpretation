@@ -98,10 +98,7 @@ EDGE_FEATURE_NAMES = [
     'mri_amygdala_vol_mean',
     'mri_inferior_temporal_vol_mean',
     'mri_middle_temporal_vol_mean',
-    'PHS',
-    'ADNI_MEM',
-    'ADNI_EF',
-    'ADNI_LAN',
+   
 ]
 
 
@@ -117,20 +114,21 @@ EDGE_ABLATION_GROUPS = {
         'mri_amygdala_vol_mean',
         'mri_inferior_temporal_vol_mean',
         'mri_middle_temporal_vol_mean',
-        'PHS',
-        'ADNI_MEM',
-        'ADNI_EF',
-        'ADNI_LAN',
     ],
     "cognition": [
         'clinical_MMSCORE',
         'clinical_FAQTOTAL',
         'clinical_LDELTOTAL',
         'clinical_TRABSCOR',
-        'ADNI_MEM',
-        'ADNI_EF',
-        'ADNI_LAN',
     ],
+  
+  "cognition_cdr": [
+    'clinical_MMSCORE',
+    'clinical_FAQTOTAL',
+    'clinical_LDELTOTAL',
+    'clinical_TRABSCOR',
+    'clinical_CDGLOBAL',
+],
     "mri": [
         'mri_hippocampus_vol_mean',
         'mri_entorhinal_vol_mean',
@@ -141,8 +139,7 @@ EDGE_ABLATION_GROUPS = {
     "apoe_demo": [
         'clinical_APOE4_count',
         'clinical_entry_age',
-        'clinical_EDUCAT',
-        'PHS',
+        'clinical_EDUCAT',  
     ],
 }
 
@@ -151,7 +148,6 @@ EDGE_ABLATION_GROUPS = {
 # Includes genetic markers, immutable demographics, and identifiers.
 COUNTERFACTUAL_FIXED_FEATURES = frozenset({
     "clinical_APOE4_count",      # genetic — immutable
-    "PHS",                       # polygenic hazard score — genetic, immutable
     "clinical_entry_age",        # age — immutable
     "clinical_EDUCAT",           # education — fixed at baseline
     "subject_id", "merge_key", "time_key", "clinical_session_id",
