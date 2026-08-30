@@ -12,11 +12,15 @@ patient-level interpretation. ADNI data are not distributed here.
 - `generate_and_evaluate_bioleaflets.py`: visit-matched BioLeaflet assembly,
   deterministic field audit, and ROUGE evaluation
 - `ADNIT5.py`: FLAN-T5 refinement and evaluation
+- `flan_t5_oof.py`: five-fold participant-disjoint FLAN-T5 evaluation with
+  semantic verification and deterministic fallback
 - `run_bioleaflet_rag_prototype.py`: evidence-grounded follow-up evaluation
 - `publication_validation.py`: calibration, matched logistic regression, and
   participant-cluster bootstrap analysis
 - `verifier_stress_test.py`: clean-control and deterministic corruption tests
 - `experiment_commands.json`: commands used for all reported experiments
+- `requirements_flan_t5_oof.txt`: exact direct dependencies for the reported
+  out-of-fold language-model run
 - `tests/`: data-free tests for splitting, targets, verification, and metrics
 
 ## Environment
@@ -118,6 +122,45 @@ python baseline_comparison.py \
 Additional nested-CV, inductive, ablation, interpretation, FLAN-T5, and RAG
 commands are recorded in `experiment_commands.json`.
 
+## Participant-disjoint FLAN-T5 evaluation
+
+The publication analysis evaluates every diagnostic-model test visit out of
+fold. The 34 participants are partitioned into five outer folds, the base
+FLAN-T5 model is reinitialized for each fold, and no participant contributes
+text to both model training and that fold's test set. Paraphrased visit targets
+and participant summaries are training-only augmentations; validation and test
+sets contain one original target per visit.
+
+The reported run used Python 3.9.19 and the versions in
+`requirements_flan_t5_oof.txt`. Install a CUDA-enabled PyTorch 2.3.1 build
+appropriate for the local device when GPU training is required.
+
+Run each fold separately so that GPU memory is released between folds, then
+aggregate and reverify the saved outputs:
+
+```bash
+python flan_t5_oof.py --results_dir results/main_model \
+  --data_csv study_data_no_cdr.csv --out_dir results/flan_t5_oof --fold 1
+python flan_t5_oof.py --results_dir results/main_model \
+  --data_csv study_data_no_cdr.csv --out_dir results/flan_t5_oof --fold 2
+python flan_t5_oof.py --results_dir results/main_model \
+  --data_csv study_data_no_cdr.csv --out_dir results/flan_t5_oof --fold 3
+python flan_t5_oof.py --results_dir results/main_model \
+  --data_csv study_data_no_cdr.csv --out_dir results/flan_t5_oof --fold 4
+python flan_t5_oof.py --results_dir results/main_model \
+  --data_csv study_data_no_cdr.csv --out_dir results/flan_t5_oof --fold 5
+python flan_t5_oof.py --results_dir results/main_model \
+  --data_csv study_data_no_cdr.csv --out_dir results/flan_t5_oof \
+  --reverify_saved
+```
+
+The aggregate summary is safe to share and is included as
+`aggregate_results/flan_t5_oof_summary.json`. Fold predictions, generated
+text, participant assignments, training corpora, and checkpoints are
+restricted local artifacts. The older `ADNIT5.py` train/evaluate commands are
+retained for exploratory use but are not the reported participant-disjoint
+publication evaluation.
+
 ## Publication validation analyses
 
 The nested-CV command reports the raw GNN result and, separately, a post-hoc
@@ -154,7 +197,8 @@ estimates of safety for unconstrained language-model output or clinical use.
 
 Non-identifying aggregate metrics from the verified runs are recorded under
 `aggregate_results/`, including classification, calibration, explanation
-faithfulness, BioLeaflet, RAG, and verifier-stress summaries. Per-visit
+faithfulness, BioLeaflet, out-of-fold FLAN-T5, RAG, and verifier-stress
+summaries. Per-visit
 probabilities, participant assignments, model checkpoints, and ADNI records
 are deliberately excluded.
 

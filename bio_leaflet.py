@@ -1018,7 +1018,7 @@ def render_leaflet(ctx):
     ctx["counterfactual_interpretation"] = build_counterfactual_interpretation(ctx)
     ctx["uncertainty_interpretation"] = build_uncertainty_interpretation(ctx)
     # Disease progression (subject-level only — populated by build_subject_context)
-    if "progression_timeline" in ctx:
+    if ctx.get("progression_timeline") and "stability" in ctx:
         ctx["progression_narrative"] = build_progression_narrative(ctx)
     else:
         ctx.setdefault("progression_timeline", "")
@@ -1041,7 +1041,7 @@ def render_leaflet_with_t5(ctx, t5_stage_interpretation=None, t5_summary=None):
     ctx["counterfactual_interpretation"] = build_counterfactual_interpretation(ctx)
     ctx["uncertainty_interpretation"] = build_uncertainty_interpretation(ctx)
     # Disease progression (subject-level only)
-    if "progression_timeline" in ctx:
+    if ctx.get("progression_timeline") and "stability" in ctx:
         ctx["progression_narrative"] = build_progression_narrative(ctx)
     else:
         ctx.setdefault("progression_timeline", "")

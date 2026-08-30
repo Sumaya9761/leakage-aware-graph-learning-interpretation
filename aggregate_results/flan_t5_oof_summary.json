@@ -1,0 +1,229 @@
+{
+  "design": "five-fold participant-disjoint out-of-fold evaluation",
+  "n_participants": 34,
+  "n_visit_reports": 148,
+  "n_folds": 5,
+  "all_participants_evaluated_out_of_fold": true,
+  "rouge": {
+    "raw_generation": {
+      "rouge1": {
+        "mean": 0.9616,
+        "participant_cluster_bootstrap_95_ci": [
+          0.9462,
+          0.9764
+        ]
+      },
+      "rouge2": {
+        "mean": 0.8559,
+        "participant_cluster_bootstrap_95_ci": [
+          0.8381,
+          0.8729
+        ]
+      },
+      "rougeL": {
+        "mean": 0.4759,
+        "participant_cluster_bootstrap_95_ci": [
+          0.468,
+          0.4835
+        ]
+      }
+    },
+    "postprocessed_candidate": {
+      "rouge1": {
+        "mean": 0.9984,
+        "participant_cluster_bootstrap_95_ci": [
+          0.9973,
+          0.9994
+        ]
+      },
+      "rouge2": {
+        "mean": 0.8971,
+        "participant_cluster_bootstrap_95_ci": [
+          0.896,
+          0.8981
+        ]
+      },
+      "rougeL": {
+        "mean": 0.4878,
+        "participant_cluster_bootstrap_95_ci": [
+          0.4839,
+          0.4914
+        ]
+      }
+    }
+  },
+  "guardrails": {
+    "required_headers_present": 148,
+    "target_guardrail_pass": 148,
+    "semantic_guardrail_pass": 131,
+    "hybrid_candidate_report_pass": 148,
+    "candidate_accepted": 131,
+    "candidate_acceptance_rate": 0.8851,
+    "template_fallbacks": 17,
+    "template_fallback_rate": 0.1149,
+    "final_reports_passing_verification": 148,
+    "final_report_verification_rate": 1.0,
+    "candidate_rejection_reasons": {
+      "UNCERTAINTY_LANGUAGE_MISMATCH": 17
+    },
+    "candidate_rejections_by_predicted_class": {
+      "0.5": 17
+    }
+  },
+  "folds": [
+    {
+      "fold": 1,
+      "participants": 5,
+      "visits": 21,
+      "raw_rouge1": 0.9524,
+      "raw_rouge2": 0.8441,
+      "raw_rougeL": 0.4679,
+      "postprocessed_rouge1": 1.0,
+      "postprocessed_rouge2": 0.8969,
+      "postprocessed_rougeL": 0.4832,
+      "candidate_acceptance_rate": 1.0
+    },
+    {
+      "fold": 2,
+      "participants": 7,
+      "visits": 32,
+      "raw_rouge1": 0.936,
+      "raw_rouge2": 0.8278,
+      "raw_rougeL": 0.4693,
+      "postprocessed_rouge1": 0.9953,
+      "postprocessed_rouge2": 0.8947,
+      "postprocessed_rougeL": 0.4888,
+      "candidate_acceptance_rate": 0.6562
+    },
+    {
+      "fold": 3,
+      "participants": 7,
+      "visits": 33,
+      "raw_rouge1": 0.9595,
+      "raw_rouge2": 0.8527,
+      "raw_rougeL": 0.4726,
+      "postprocessed_rouge1": 0.9992,
+      "postprocessed_rouge2": 0.8969,
+      "postprocessed_rougeL": 0.4853,
+      "candidate_acceptance_rate": 0.9394
+    },
+    {
+      "fold": 4,
+      "participants": 8,
+      "visits": 34,
+      "raw_rouge1": 0.9691,
+      "raw_rouge2": 0.8651,
+      "raw_rougeL": 0.4787,
+      "postprocessed_rouge1": 0.9984,
+      "postprocessed_rouge2": 0.8977,
+      "postprocessed_rougeL": 0.4881,
+      "candidate_acceptance_rate": 0.8824
+    },
+    {
+      "fold": 5,
+      "participants": 7,
+      "visits": 28,
+      "raw_rouge1": 0.9911,
+      "raw_rouge2": 0.8896,
+      "raw_rougeL": 0.4897,
+      "postprocessed_rouge1": 1.0,
+      "postprocessed_rouge2": 0.8993,
+      "postprocessed_rougeL": 0.4927,
+      "candidate_acceptance_rate": 1.0
+    }
+  ],
+  "bootstrap_replicates": 10000,
+  "unit_of_resampling": "participant",
+  "training": {
+    "model": "google/flan-t5-base",
+    "base_model_reinitialized_each_fold": true,
+    "epochs": 10,
+    "batch_size": 4,
+    "gradient_accumulation_steps": 2,
+    "learning_rate": 0.0001,
+    "max_input_tokens": 416,
+    "max_target_tokens": 224,
+    "training_augmentation": "node paraphrases plus threefold subject summaries",
+    "validation_and_test_modes": "original visit targets only",
+    "fold_details": [
+      {
+        "fold": 1,
+        "train_participants": 23,
+        "validation_participants": 6,
+        "test_participants": 5,
+        "train_pairs": 375,
+        "validation_visits": 25,
+        "test_visits": 21,
+        "best_validation_loss": 1.477216,
+        "training_loss": 1.766741,
+        "runtime_seconds": 164.0
+      },
+      {
+        "fold": 2,
+        "train_participants": 22,
+        "validation_participants": 5,
+        "test_participants": 7,
+        "train_pairs": 357,
+        "validation_visits": 19,
+        "test_visits": 32,
+        "best_validation_loss": 1.478996,
+        "training_loss": 1.778563,
+        "runtime_seconds": 164.6
+      },
+      {
+        "fold": 3,
+        "train_participants": 22,
+        "validation_participants": 5,
+        "test_participants": 7,
+        "train_pairs": 345,
+        "validation_visits": 22,
+        "test_visits": 33,
+        "best_validation_loss": 1.479307,
+        "training_loss": 1.785572,
+        "runtime_seconds": 162.6
+      },
+      {
+        "fold": 4,
+        "train_participants": 21,
+        "validation_participants": 5,
+        "test_participants": 8,
+        "train_pairs": 342,
+        "validation_visits": 21,
+        "test_visits": 34,
+        "best_validation_loss": 1.480857,
+        "training_loss": 1.784602,
+        "runtime_seconds": 162.4
+      },
+      {
+        "fold": 5,
+        "train_participants": 22,
+        "validation_participants": 5,
+        "test_participants": 7,
+        "train_pairs": 345,
+        "validation_visits": 27,
+        "test_visits": 28,
+        "best_validation_loss": 1.481592,
+        "training_loss": 1.790767,
+        "runtime_seconds": 151.6
+      }
+    ]
+  },
+  "runtime": {
+    "python": "3.9.19",
+    "torch": "2.3.1",
+    "transformers": "4.46.3",
+    "cuda_available": true,
+    "device": "NVIDIA GeForce RTX 4070 Ti",
+    "total_fold_runtime_seconds": 805.2
+  },
+  "privacy": {
+    "aggregate_contains_participant_identifiers": false,
+    "predictions_and_checkpoints_are_restricted_local_artifacts": true
+  },
+  "postprocessing_and_verification": {
+    "canonical_stage_label_normalization": true,
+    "required_grounding_statements_checked": 4,
+    "uncertainty_language_consistency_checked": true,
+    "failed_candidates_use_deterministic_template_fallback": true
+  }
+}

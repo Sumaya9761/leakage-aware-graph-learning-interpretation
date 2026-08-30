@@ -37,6 +37,10 @@
 
   "flan_t5_evaluate": "python ADNIT5.py evaluate --results_dir results/main_model --data_csv study_data_no_cdr.csv --model_path flan-t5-adni --out_dir results/flan_t5_evaluation",
 
+  "flan_t5_oof_fold": "python flan_t5_oof.py --results_dir results/main_model --data_csv study_data_no_cdr.csv --out_dir results/flan_t5_oof --fold FOLD_NUMBER",
+
+  "flan_t5_oof_reverify": "python flan_t5_oof.py --results_dir results/main_model --data_csv study_data_no_cdr.csv --out_dir results/flan_t5_oof --reverify_saved",
+
   "rag_evaluation": "python run_bioleaflet_rag_prototype.py --bioleaflets results/bioleaflets/bioleaflets.csv --knowledge_base bioleaflet_rag_knowledge_base.json --out_dir results/rag",
 
   "verifier_stress_test": "python verifier_stress_test.py --results_dir results/main_model --data_csv study_data_no_cdr.csv --rag_answers results/rag/rag_answers.csv --rag_knowledge_base bioleaflet_rag_knowledge_base.json --out_dir results/verifier_stress"

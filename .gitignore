@@ -236,6 +236,10 @@ results/
 
 # Restricted participant-level outputs
 split_subject_ids*.csv
+restricted_*_predictions.csv
+restricted_training_corpus/
+restricted_checkpoints/
+fold_*_training_summary.json
 ensemble_probabilities*.csv
 *_ensemble_probabilities*.csv
 *_seed_probabilities*.csv
