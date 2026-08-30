@@ -19,7 +19,7 @@ features using an RBF kernel and subject-aware top-K sparsification.
 
 Usage:
   python hybrid_gnn.py \
-    --single study_data_*.csv \
+    --single single study_data_*.csv \
     --out_dir results/main_model \
     --verbose
 """
@@ -2910,7 +2910,7 @@ def print_counterfactual_summary(cf_results, i2c, classes):
             dname = feat_display.get(ch["feature"], ch["feature"])
             pct_label = f"{ch['direction']}{ch['perturb_pct']:.2f} SD"
             direction_word = "increase" if ch["direction"] == "+" else "decrease"
-            print(f"    {dname:<36}  {ch['original_std']:+.3f} → {ch['perturbed_std']:+.3f}"
+            print(f"    {dname:<36}  {ch['original_std']:+.3f} -> {ch['perturbed_std']:+.3f}"
                   f"  ({pct_label})   [{direction_word}]")
         if cf["changes"]:
             top_feat = feat_display.get(cf["changes"][0]["feature"], cf["changes"][0]["feature"])
@@ -3411,7 +3411,7 @@ def run_single_fold(df, y_all, edge_feat_cols, classes, c2i,
         )
 
     # Optional: Counterfactual Explanations 
-    if getattr(args, "counterfactual", False) and np.asarray(test_mask, dtype=bool).any():
+    if getattr(args, "counterfactual", False) and not args.no_explain and np.asarray(test_mask, dtype=bool).any():
         # Ensure feature_names is available (may already be set from GNNExplainer block above)
         if _cf_feature_names is None:
             _cf_feature_names = get_feature_names(pre, num_cols, cat_cols)
