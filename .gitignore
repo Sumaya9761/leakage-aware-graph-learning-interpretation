@@ -216,3 +216,16 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+# Project data
+data/
+study_data_*.csv
+*ADNI*.csv
+*adni*.csv
+
+# Trained models
+models/
+checkpoints/
+flan-t5-adni/
+
+# Experiment results
+results/
