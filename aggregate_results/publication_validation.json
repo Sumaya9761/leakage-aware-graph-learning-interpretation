@@ -1,0 +1,325 @@
+{
+  "schema_version": 1,
+  "design": {
+    "split": "fixed subject-disjoint train/validation/test",
+    "model_selection": "training and validation rows only",
+    "test_rows": 148,
+    "test_participants": 34,
+    "features": [
+      "clinical_entry_age",
+      "clinical_GENDER",
+      "clinical_EDUCAT",
+      "clinical_APOE4_count",
+      "clinical_MMSCORE",
+      "clinical_FAQTOTAL",
+      "clinical_LDELTOTAL",
+      "clinical_TRABSCOR",
+      "mri_hippocampus_vol_mean",
+      "mri_entorhinal_vol_mean",
+      "mri_amygdala_vol_mean",
+      "mri_inferior_temporal_vol_mean",
+      "mri_middle_temporal_vol_mean",
+      "mri_lateral_ventricle_vol_mean",
+      "mri_inf_lat_vent_vol_mean",
+      "clinical_ABETA42",
+      "pet_PTAU",
+      "pet_TAU",
+      "visit_month",
+      "visit_age"
+    ],
+    "cdr_used": false
+  },
+  "selection": {
+    "selection_partition": "validation only",
+    "temperature": 0.3724951803758529,
+    "mci_log_probability_offset": 0.040000000000000036,
+    "mci_adjusted_validation_balanced_accuracy": 0.8429951690821257,
+    "fusion_gnn_weight": 1.0,
+    "fusion_validation_balanced_accuracy": 0.8381642512077295,
+    "fusion_candidates": [
+      {
+        "balanced_accuracy": 0.800552104899931,
+        "gnn_weight": 0.0
+      },
+      {
+        "balanced_accuracy": 0.7988267770876467,
+        "gnn_weight": 0.25
+      },
+      {
+        "balanced_accuracy": 0.8146997929606625,
+        "gnn_weight": 0.5
+      },
+      {
+        "balanced_accuracy": 0.81608005521049,
+        "gnn_weight": 0.75
+      },
+      {
+        "balanced_accuracy": 0.8381642512077295,
+        "gnn_weight": 1.0
+      }
+    ],
+    "seed_selection": {
+      "status": "exploratory deployment-model selection",
+      "selected_seed": 43,
+      "validation_balanced_accuracy": 0.8574879227053142,
+      "candidate_validation_balanced_accuracy": {
+        "42": 0.8285024154589372,
+        "43": 0.8574879227053142,
+        "44": 0.8398895790200139,
+        "45": 0.8333333333333334,
+        "46": 0.8333333333333334
+      }
+    }
+  },
+  "validation_metrics": {
+    "GNN ensemble": {
+      "balanced_accuracy": 0.8381642512077295,
+      "accuracy": 0.8104575163398693,
+      "macro_f1": 0.8160328700061195,
+      "macro_auc": 0.9345121519034563,
+      "recall": {
+        "NC": 0.9047619047619048,
+        "MCI": 0.6811594202898551,
+        "AD": 0.9285714285714286
+      },
+      "negative_log_likelihood": 0.6576955653341455,
+      "brier_score": 0.37619372292218295,
+      "ece_10_bin": 0.23022220114708208
+    },
+    "Logistic regression": {
+      "balanced_accuracy": 0.800552104899931,
+      "accuracy": 0.7973856209150327,
+      "macro_f1": 0.8015215413875797,
+      "macro_auc": 0.9370022196109152,
+      "recall": {
+        "NC": 0.7619047619047619,
+        "MCI": 0.782608695652174,
+        "AD": 0.8571428571428571
+      },
+      "negative_log_likelihood": 0.4356520759036257,
+      "brier_score": 0.271948779798745,
+      "ece_10_bin": 0.028229831753826228
+    },
+    "GNN MCI-adjusted": {
+      "balanced_accuracy": 0.8429951690821257,
+      "accuracy": 0.8169934640522876,
+      "macro_f1": 0.8226007812814626,
+      "macro_auc": 0.9345121519034563,
+      "recall": {
+        "NC": 0.9047619047619048,
+        "MCI": 0.6956521739130435,
+        "AD": 0.9285714285714286
+      },
+      "negative_log_likelihood": 0.6535694724409368,
+      "brier_score": 0.37354400534223614,
+      "ece_10_bin": 0.23737703698499252
+    },
+    "Validation-selected fusion": {
+      "balanced_accuracy": 0.8381642512077295,
+      "accuracy": 0.8104575163398693,
+      "macro_f1": 0.8160328700061195,
+      "macro_auc": 0.9345121519034563,
+      "recall": {
+        "NC": 0.9047619047619048,
+        "MCI": 0.6811594202898551,
+        "AD": 0.9285714285714286
+      },
+      "negative_log_likelihood": 0.6576955653341455,
+      "brier_score": 0.37619372292218295,
+      "ece_10_bin": 0.23022220114708208
+    },
+    "Validation-selected GNN seed": {
+      "balanced_accuracy": 0.8574879227053142,
+      "accuracy": 0.8366013071895425,
+      "macro_f1": 0.8419294289862943,
+      "macro_auc": 0.9342976516889561,
+      "recall": {
+        "NC": 0.9047619047619048,
+        "MCI": 0.7391304347826086,
+        "AD": 0.9285714285714286
+      },
+      "negative_log_likelihood": 0.7953376486042646,
+      "brier_score": 0.4630992033818568,
+      "ece_10_bin": 0.35729600884162244
+    }
+  },
+  "test_metrics": {
+    "GNN ensemble": {
+      "balanced_accuracy": 0.7766735679779159,
+      "accuracy": 0.7635135135135135,
+      "macro_f1": 0.7716108452950557,
+      "macro_auc": 0.9168584681616699,
+      "recall": {
+        "NC": 0.9347826086956522,
+        "MCI": 0.6333333333333333,
+        "AD": 0.7619047619047619
+      },
+      "negative_log_likelihood": 0.6648346188563788,
+      "brier_score": 0.3843499126859681,
+      "ece_10_bin": 0.16493362347815813
+    },
+    "GNN temperature-scaled": {
+      "balanced_accuracy": 0.7766735679779159,
+      "accuracy": 0.7635135135135135,
+      "macro_f1": 0.7716108452950557,
+      "macro_auc": 0.9173317108184164,
+      "recall": {
+        "NC": 0.9347826086956522,
+        "MCI": 0.6333333333333333,
+        "AD": 0.7619047619047619
+      },
+      "negative_log_likelihood": 0.5863944332573876,
+      "brier_score": 0.3457575284045363,
+      "ece_10_bin": 0.07800502304480511
+    },
+    "GNN MCI-adjusted": {
+      "balanced_accuracy": 0.7694271911663216,
+      "accuracy": 0.7567567567567568,
+      "macro_f1": 0.7658107165591472,
+      "macro_auc": 0.9169295110715875,
+      "recall": {
+        "NC": 0.9130434782608695,
+        "MCI": 0.6333333333333333,
+        "AD": 0.7619047619047619
+      },
+      "negative_log_likelihood": 0.661590218547305,
+      "brier_score": 0.38235640597270854,
+      "ece_10_bin": 0.15876221973464646
+    },
+    "Logistic regression": {
+      "balanced_accuracy": 0.7840924775707384,
+      "accuracy": 0.777027027027027,
+      "macro_f1": 0.7863195911275903,
+      "macro_auc": 0.9175708421932424,
+      "recall": {
+        "NC": 0.8260869565217391,
+        "MCI": 0.7166666666666667,
+        "AD": 0.8095238095238095
+      },
+      "negative_log_likelihood": 0.4932840534702668,
+      "brier_score": 0.3148578118452558,
+      "ece_10_bin": 0.08633677655001026
+    },
+    "Validation-selected fusion": {
+      "balanced_accuracy": 0.7766735679779159,
+      "accuracy": 0.7635135135135135,
+      "macro_f1": 0.7716108452950557,
+      "macro_auc": 0.9168584681616699,
+      "recall": {
+        "NC": 0.9347826086956522,
+        "MCI": 0.6333333333333333,
+        "AD": 0.7619047619047619
+      },
+      "negative_log_likelihood": 0.6648346188563788,
+      "brier_score": 0.3843499126859681,
+      "ece_10_bin": 0.16493362347815813
+    },
+    "Validation-selected GNN seed": {
+      "balanced_accuracy": 0.7943409247757073,
+      "accuracy": 0.7837837837837838,
+      "macro_f1": 0.7897897897897898,
+      "macro_auc": 0.9209182022797933,
+      "recall": {
+        "NC": 0.9782608695652174,
+        "MCI": 0.6666666666666666,
+        "AD": 0.7380952380952381
+      },
+      "negative_log_likelihood": 0.7887959841575048,
+      "brier_score": 0.4611340263384628,
+      "ece_10_bin": 0.29056763827739396
+    }
+  },
+  "participant_cluster_bootstrap": {
+    "unit": "participant",
+    "requested_replicates": 10000,
+    "accepted_replicates": 10000,
+    "rejected_missing_class": 0,
+    "seed": 42,
+    "balanced_accuracy": {
+      "GNN ensemble": {
+        "mean": 0.7763627919502911,
+        "ci95": [
+          0.6776317146423039,
+          0.8744120728562217
+        ]
+      },
+      "GNN temperature-scaled": {
+        "mean": 0.7763627919502911,
+        "ci95": [
+          0.6776317146423039,
+          0.8744120728562217
+        ]
+      },
+      "GNN MCI-adjusted": {
+        "mean": 0.76912126007862,
+        "ci95": [
+          0.668494339949378,
+          0.8709871878194451
+        ]
+      },
+      "Logistic regression": {
+        "mean": 0.7837602081989087,
+        "ci95": [
+          0.6808972453748574,
+          0.8745559078967112
+        ]
+      },
+      "Validation-selected fusion": {
+        "mean": 0.7763627919502911,
+        "ci95": [
+          0.6776317146423039,
+          0.8744120728562217
+        ]
+      },
+      "Validation-selected GNN seed": {
+        "mean": 0.7940156606956702,
+        "ci95": [
+          0.7006449583280383,
+          0.8871070276623336
+        ]
+      }
+    },
+    "paired_difference_vs_Logistic regression": {
+      "GNN ensemble": {
+        "mean": -0.007397416248617529,
+        "ci95": [
+          -0.0738512436626929,
+          0.06320892625347257
+        ],
+        "probability_difference_gt_0": 0.4062
+      },
+      "GNN temperature-scaled": {
+        "mean": -0.007397416248617529,
+        "ci95": [
+          -0.0738512436626929,
+          0.06320892625347257
+        ],
+        "probability_difference_gt_0": 0.4062
+      },
+      "GNN MCI-adjusted": {
+        "mean": -0.014638948120288672,
+        "ci95": [
+          -0.07575698711688066,
+          0.04666140177264651
+        ],
+        "probability_difference_gt_0": 0.3231
+      },
+      "Validation-selected fusion": {
+        "mean": -0.007397416248617529,
+        "ci95": [
+          -0.0738512436626929,
+          0.06320892625347257
+        ],
+        "probability_difference_gt_0": 0.4062
+      },
+      "Validation-selected GNN seed": {
+        "mean": 0.010255452496761469,
+        "ci95": [
+          -0.06272832738398777,
+          0.09429893579734779
+        ],
+        "probability_difference_gt_0": 0.5829
+      }
+    }
+  }
+}

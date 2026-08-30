@@ -402,12 +402,45 @@ def verify_answer(
         and confidence_ok
         and entropy_ok
     )
+    true_label_claims = [
+        value.rstrip(".") for value in re.findall(r"DXSUM label\s+([^\s,;]+)", answer)
+    ]
+    prediction_claims = [
+        value.rstrip(".")
+        for value in re.findall(
+            r"model prediction(?!\s+toward)\s+([^\s,;]+)", answer
+        )
+    ]
+    confidence_claims = re.findall(r"confidence\s+([0-9]+(?:\.[0-9]+)?)%", answer)
+    entropy_claims = re.findall(r"entropy\s+([0-9]+(?:\.[0-9]+)?)", answer)
+    patient_fact_consistency_pass = (
+        all(value == facts["true_class"] for value in true_label_claims)
+        and all(value == facts["pred_class"] for value in prediction_claims)
+        and (
+            all(value == facts["confidence_pct"] for value in confidence_claims)
+            if facts["confidence_pct"]
+            else not confidence_claims
+        )
+        and (
+            not facts["entropy"]
+            or all(value == facts["entropy"] for value in entropy_claims)
+        )
+    )
     graph_agreement_pass = True
     if question["question_type"] == "graph_context":
         if facts["graph_agreement_pct"]:
             graph_agreement_pass = f"{facts['graph_agreement_pct']}%" in answer
         else:
             graph_agreement_pass = "does not report a neighbourhood agreement value" in answer.lower()
+        graph_claims = re.findall(
+            r"neighbourhood agreement(?:\s+of|\s+was)?\s+([0-9]+(?:\.[0-9]+)?)%",
+            answer,
+            flags=re.IGNORECASE,
+        )
+        if facts["graph_agreement_pct"] and any(
+            value != facts["graph_agreement_pct"] for value in graph_claims
+        ):
+            graph_agreement_pass = False
 
     valid_citations_pass = bool(cited_ids) and all(eid in kb_ids for eid in cited_ids)
     citation_coverage_pass = all(eid in cited_ids for eid in evidence_ids[:1])
@@ -421,6 +454,7 @@ def verify_answer(
     overall = all(
         [
             patient_fact_pass,
+            patient_fact_consistency_pass,
             valid_citations_pass,
             citation_coverage_pass,
             question_relevance_pass,
@@ -435,6 +469,7 @@ def verify_answer(
         "answer_id": question["answer_id"],
         "question_type": question["question_type"],
         "patient_fact_pass": int(patient_fact_pass),
+        "patient_fact_consistency_pass": int(patient_fact_consistency_pass),
         "valid_citations_pass": int(valid_citations_pass),
         "citation_coverage_pass": int(citation_coverage_pass),
         "question_relevance_pass": int(question_relevance_pass),
@@ -451,6 +486,7 @@ def verify_answer(
 def summarize_checks(checks: pd.DataFrame, answers: pd.DataFrame) -> Dict:
     bool_cols = [
         "patient_fact_pass",
+        "patient_fact_consistency_pass",
         "valid_citations_pass",
         "citation_coverage_pass",
         "question_relevance_pass",

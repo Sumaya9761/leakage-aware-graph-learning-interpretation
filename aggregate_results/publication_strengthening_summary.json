@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "generated_on": "2026-08-30",
+  "nested_subject_level_cross_validation": {
+    "raw_gnn": {
+      "balanced_accuracy_mean": 0.7849932786,
+      "balanced_accuracy_sd": 0.0341834389,
+      "macro_auc_mean": 0.9250093371,
+      "recall": {"NC": 0.9422334877, "MCI": 0.5584334565, "AD": 0.8543128917}
+    },
+    "validation_selected_mci_decision_adjustment": {
+      "status": "post-hoc sensitivity analysis; raw GNN remains primary",
+      "selection": "MCI log-probability offset selected on each internal validation split and locked before outer-test evaluation",
+      "balanced_accuracy_mean": 0.7939808975,
+      "balanced_accuracy_sd": 0.0384545351,
+      "balanced_accuracy_ci95": [0.7462332857, 0.8417285093],
+      "recall": {"NC": 0.9192496070, "MCI": 0.6330251134, "AD": 0.8296680017}
+    },
+    "logistic_regression": {
+      "balanced_accuracy_mean": 0.7860119234,
+      "balanced_accuracy_sd": 0.0524740121,
+      "balanced_accuracy_ci95": [0.7208568317, 0.8511670151],
+      "macro_auc_mean": 0.9146734458,
+      "recall": {"NC": 0.8718831167, "MCI": 0.6716761781, "AD": 0.8144764755}
+    },
+    "paired_adjusted_gnn_minus_logistic_regression": {
+      "mean": 0.0079689755,
+      "ci95_t_across_folds": [-0.0241424243, 0.0400803753],
+      "fold_outcomes": "3 wins, 1 tie, 1 loss",
+      "interpretation": "Descriptive difference with interval spanning zero; no superiority claim."
+    }
+  },
+  "fixed_split_probability_audit": {
+    "test_participants": 34,
+    "test_sessions": 148,
+    "gnn_ensemble": {
+      "balanced_accuracy": 0.7766735680,
+      "ece_10_bin": 0.1649336235,
+      "brier_score": 0.3843499127,
+      "negative_log_likelihood": 0.6648346189
+    },
+    "validation_selected_temperature_scaling": {
+      "temperature": 0.3724951804,
+      "balanced_accuracy": 0.7766735680,
+      "ece_10_bin": 0.0780050230,
+      "brier_score": 0.3457575284,
+      "negative_log_likelihood": 0.5863944333
+    },
+    "matched_logistic_regression": {
+      "balanced_accuracy": 0.7840924776,
+      "ece_10_bin": 0.0863367766,
+      "brier_score": 0.3148578118,
+      "negative_log_likelihood": 0.4932840535
+    },
+    "participant_cluster_bootstrap_10000": {
+      "gnn_balanced_accuracy_ci95": [0.6776317146, 0.8744120729],
+      "logistic_regression_balanced_accuracy_ci95": [0.6808972454, 0.8745559079],
+      "gnn_minus_logistic_regression_mean": -0.0073974162,
+      "gnn_minus_logistic_regression_ci95": [-0.0738512437, 0.0632089263]
+    },
+    "validation_selected_fusion": {
+      "selected_gnn_weight": 1.0,
+      "interpretation": "Validation rejected LR fusion; no fused-model improvement was reported."
+    }
+  },
+  "explanation_faithfulness": {
+    "patient_specific_rankings_generated": "148/148 held-out visits, targeting the ensemble-predicted class",
+    "scope": "faithfulness test restricted to 112 correctly classified visits; graphs held fixed",
+    "top_features_removed_per_visit": 3,
+    "top_ranked_mean_predicted_class_probability_drop": 0.0472140722,
+    "matched_random_mean_predicted_class_probability_drop": 0.0029552099,
+    "top_minus_random_probability_drop": 0.0442588623,
+    "top_ranked_prediction_flip_rate": 0.0446428571,
+    "matched_random_prediction_flip_rate_mean": 0.0030357143,
+    "random_repetitions": 100,
+    "empirical_one_sided_p": 0.0099009901,
+    "interpretation": "Local feature-ranking faithfulness, not causal feature importance."
+  },
+  "verifier_stress_test": {
+    "design": "clean negative controls plus deterministic single-error or contradiction mutations",
+    "bioleaflet": {
+      "local_attribution_coverage": "148/148",
+      "deterministic_fields_verified": "2108/2108",
+      "clean_accepted": "148/148",
+      "corruptions_detected": "1875/1875"
+    },
+    "rag": {
+      "design": "five core questions per report plus 43 counterfactual questions when a valid perturbation was available",
+      "clean_accepted": "783/783",
+      "corruptions_detected": "8909/8909"
+    },
+    "interpretation": "Performance applies to predefined synthetic challenges, not unconstrained generation or clinical safety."
+  }
+}

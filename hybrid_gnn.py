@@ -1838,12 +1838,25 @@ def _save_uncertainty_csv(unc: dict, y_all, test_mask, classes: list, out_dir, d
     pd.DataFrame(rows).to_csv(out_dir / "uncertainty_estimates.csv", index=False)
 
 
-def _save_ensemble_probabilities_csv(res_te, y_all, test_mask, classes, out_dir, df=None) -> None:
-    """Save per-test-node ensemble-averaged class probabilities to ensemble_probabilities.csv."""
-    test_indices = np.where(np.asarray(test_mask, dtype=bool))[0]
-    probs = res_te["probs"]
+def _save_ensemble_probabilities_csv(
+    result,
+    y_all,
+    mask,
+    classes,
+    out_dir,
+    df=None,
+    filename="ensemble_probabilities.csv",
+) -> None:
+    """Save ensemble probabilities for one split.
+
+    These participant-level exports are restricted local artifacts and are
+    excluded by ``.gitignore``. Validation probabilities are saved so any
+    post-training decision rule can be selected without consulting test labels.
+    """
+    split_indices = np.where(np.asarray(mask, dtype=bool))[0]
+    probs = result["probs"]
     rows = []
-    for node_i in test_indices:
+    for node_i in split_indices:
         row = {
             "node_idx": int(node_i),
             "true_class": classes[int(y_all[node_i])],
@@ -1856,7 +1869,54 @@ def _save_ensemble_probabilities_csv(res_te, y_all, test_mask, classes, out_dir,
         if df is not None and "clinical_session_id" in df.columns:
             row["clinical_session_id"] = str(df.iloc[node_i]["clinical_session_id"])
         rows.append(row)
-    pd.DataFrame(rows).to_csv(out_dir / "ensemble_probabilities.csv", index=False)
+    pd.DataFrame(rows).to_csv(out_dir / filename, index=False)
+
+
+def _save_per_seed_probabilities_csv(
+    models,
+    seeds,
+    X_tensor,
+    A_norm_tensor,
+    y_all,
+    mask,
+    classes,
+    device,
+    out_dir,
+    filename,
+    df=None,
+    X_edge=None,
+    edge_index=None,
+    A_temporal=None,
+) -> None:
+    """Save restricted per-seed probabilities for validation-only ensemble selection."""
+    split_indices = np.where(np.asarray(mask, dtype=bool))[0]
+    rows = []
+    for seed, model in zip(seeds, models):
+        model.eval()
+        X_edge_device = X_edge.to(device) if X_edge is not None else None
+        edge_index_device = edge_index.to(device) if edge_index is not None else None
+        temporal_device = A_temporal.to(device) if A_temporal is not None else None
+        with torch.no_grad():
+            logits, _ = model(
+                X_tensor.to(device),
+                A_norm_tensor.to(device),
+                X_edge=X_edge_device,
+                edge_index=edge_index_device,
+                A_temporal=temporal_device,
+            )
+            probabilities = torch.softmax(logits, dim=1).cpu().numpy()
+        for node_i in split_indices:
+            row = {"seed": int(seed), "node_idx": int(node_i)}
+            for class_index, cls in enumerate(classes):
+                row[f"prob_{CLASS_EXPORT.get(cls, cls)}"] = float(
+                    probabilities[node_i, class_index]
+                )
+            if df is not None and "subject_id" in df.columns:
+                row["subject_id"] = str(df.iloc[node_i]["subject_id"])
+            if df is not None and "clinical_session_id" in df.columns:
+                row["clinical_session_id"] = str(df.iloc[node_i]["clinical_session_id"])
+            rows.append(row)
+    pd.DataFrame(rows).to_csv(out_dir / filename, index=False)
 
 
 def _build_uncertainty_summary(res_te: dict, y_all, test_mask, classes: list, c2i: dict) -> dict:
@@ -1964,6 +2024,47 @@ def ensemble_evaluate(models, X, A_norm, y, mask, device,
     }
 
 
+def apply_mci_log_probability_offset(probabilities, offset):
+    """Apply a fixed MCI decision offset and return normalized probabilities."""
+    logits = np.log(np.clip(np.asarray(probabilities, dtype=float), 1e-12, 1.0))
+    logits[:, 1] += float(offset)
+    logits -= logits.max(axis=1, keepdims=True)
+    exp_logits = np.exp(logits)
+    return exp_logits / exp_logits.sum(axis=1, keepdims=True)
+
+
+def select_mci_log_probability_offset(probabilities, labels, offsets=None):
+    """Select an MCI offset using validation labels only.
+
+    The default grid and first-maximum tie rule match the archived nested-CV
+    analysis: 51 values from -1 to 1. This changes the argmax rule; it is not
+    probability calibration and is reported separately as such.
+    """
+    if offsets is None:
+        offsets = np.linspace(-1.0, 1.0, 51)
+    labels = np.asarray(labels, dtype=int)
+    best_offset, best_score = 0.0, -float("inf")
+    for offset in offsets:
+        adjusted = apply_mci_log_probability_offset(probabilities, offset)
+        score = balanced_accuracy_score(labels, adjusted.argmax(axis=1))
+        if score > best_score:
+            best_offset, best_score = float(offset), float(score)
+    return best_offset, best_score
+
+
+def evaluate_probability_rows(probabilities, labels):
+    probabilities = np.asarray(probabilities, dtype=float)
+    labels = np.asarray(labels, dtype=int)
+    predictions = probabilities.argmax(axis=1)
+    return {
+        "balanced_accuracy": float(balanced_accuracy_score(labels, predictions)),
+        "confusion_matrix": confusion_matrix(labels, predictions).tolist(),
+        "classification_report": classification_report(
+            labels, predictions, output_dict=True, zero_division=0
+        ),
+    }
+
+
 def get_feature_names(pre, num_cols, cat_cols):
     """Extract feature names from the fitted ColumnTransformer.
     Uses get_feature_names_out() which works on sklearn >= 1.0.
@@ -2047,11 +2148,12 @@ def compute_feature_importance(models, X, A_norm, y, mask, feature_names,
         m.eval()
         with torch.no_grad():
             logits, _ = m(X_t, A_t, X_edge=X_e, edge_index=ei, A_temporal=A_t_temporal)
-            all_preds.append(logits.cpu())
-    avg_out = torch.stack(all_preds).mean(dim=0)
-    ensemble_pred = avg_out.argmax(dim=1).numpy()
+            all_preds.append(torch.softmax(logits, dim=1).cpu())
+    avg_probabilities = torch.stack(all_preds).mean(dim=0)
+    ensemble_pred = avg_probabilities.argmax(dim=1).numpy()
 
     class_importance = {}
+    patient_masks = {}  # node_idx -> average importance across ensemble models
 
     for cls_label in classes:
         cls_idx = c2i[cls_label]
@@ -2069,7 +2171,6 @@ def compute_feature_importance(models, X, A_norm, y, mask, feature_names,
 
         # Collect feature masks across all samples and all ensemble models
         all_masks = []
-        patient_masks = {}  # node_idx -> avg importance across models
         for patient_idx in cls_indices:
             per_model_masks = []
             for m in models:
@@ -2092,6 +2193,31 @@ def compute_feature_importance(models, X, A_norm, y, mask, feature_names,
 
         class_importance[cls_label] = feat_imp[:top_k]
 
+    # Class-level profiles above are intentionally based on correctly classified
+    # visits, but a deployed report also needs a local attribution when the model
+    # is wrong. Explain any remaining held-out visits for their predicted class.
+    unexplained_indices = [
+        int(node_idx)
+        for node_idx in np.where(mask_arr)[0]
+        if int(node_idx) not in patient_masks
+    ]
+    if unexplained_indices:
+        print(
+            f"  [explainer] Explaining {len(unexplained_indices)} additional "
+            "held-out samples for their predicted class..."
+        )
+    for patient_idx in unexplained_indices:
+        target_idx = int(ensemble_pred[patient_idx])
+        per_model_masks = []
+        for m in models:
+            importance = gnn_explainer_feature_mask(
+                m, X_t, A_t, patient_idx, target_idx,
+                device, epochs=epochs,
+                X_edge=X_e, edge_index=ei, A_temporal=A_t_temporal
+            )
+            per_model_masks.append(importance)
+        patient_masks[patient_idx] = np.mean(per_model_masks, axis=0)
+
     return class_importance, patient_masks, ensemble_pred
 
 
@@ -2100,8 +2226,8 @@ def build_patient_evidence(patient_masks, ensemble_pred, y,
                             top_k_patient=3):
     """Build per-patient GNNExplainer evidence from precomputed masks.
 
-    patient_masks only contains correctly-classified test patients — that
-    filtering happens upstream in compute_feature_importance.
+    Class-level summaries use correctly classified visits, while patient_masks
+    contains every held-out visit and targets each visit's predicted class.
     """
     y_arr = np.asarray(y)
     i2c = {v: k for k, v in c2i.items()}
@@ -2183,6 +2309,204 @@ def print_patient_evidence_summary(patient_evidence, classes):
             for rank, ev in enumerate(pe["evidence"], 1):
                 val_str = f"{ev['raw_value']:.4f}" if isinstance(ev['raw_value'], float) else str(ev['raw_value'])
                 print(f"      {rank}. {ev['feature']:<40s}  value={val_str:<12s}  importance={ev['importance']:.4f}")
+
+
+def _ensemble_probabilities(models, X, A_norm, device,
+                            X_edge=None, edge_index=None, A_temporal=None):
+    """Return equal-weight ensemble probabilities without metric side effects."""
+    X_edge_device = X_edge.to(device) if X_edge is not None else None
+    edge_index_device = edge_index.to(device) if edge_index is not None else None
+    temporal_device = A_temporal.to(device) if A_temporal is not None else None
+    probabilities = []
+    for model in models:
+        model.eval()
+        with torch.no_grad():
+            logits, _ = model(
+                X.to(device),
+                A_norm.to(device),
+                X_edge=X_edge_device,
+                edge_index=edge_index_device,
+                A_temporal=temporal_device,
+            )
+        probabilities.append(torch.softmax(logits, dim=1).cpu().numpy())
+    return np.mean(probabilities, axis=0)
+
+
+def _faithfulness_metrics(base_probabilities, perturbed_probabilities, labels, node_indices):
+    node_indices = np.asarray(node_indices, dtype=int)
+    baseline_predictions = base_probabilities[node_indices].argmax(axis=1)
+    perturbed_predictions = perturbed_probabilities[node_indices].argmax(axis=1)
+    row_numbers = np.arange(len(node_indices))
+    baseline_confidence = base_probabilities[node_indices][row_numbers, baseline_predictions]
+    perturbed_confidence = perturbed_probabilities[node_indices][row_numbers, baseline_predictions]
+    drops = baseline_confidence - perturbed_confidence
+    return {
+        "mean_predicted_class_probability_drop": float(np.mean(drops)),
+        "median_predicted_class_probability_drop": float(np.median(drops)),
+        "fraction_positive_probability_drop": float(np.mean(drops > 0)),
+        "prediction_flip_rate": float(np.mean(perturbed_predictions != baseline_predictions)),
+        "balanced_accuracy": float(
+            balanced_accuracy_score(labels[node_indices], perturbed_predictions)
+        ),
+    }
+
+
+def evaluate_explanation_faithfulness(
+    models,
+    X_tensor,
+    A_norm_tensor,
+    y_all,
+    feature_names,
+    patient_evidence_csv,
+    device,
+    out_dir,
+    X_edge=None,
+    edge_index=None,
+    A_temporal=None,
+    random_repeats=100,
+    seed=42,
+    correct_only=True,
+):
+    """Deletion test for patient-level GNNExplainer feature rankings.
+
+    Top-ranked features are set to zero in the preprocessed feature matrix,
+    corresponding to the training mean for standardized numeric inputs. The
+    population and temporal graphs are held fixed. Matched random feature sets
+    exclude the ranked features and use the same number of deletions per node.
+    """
+    evidence = pd.read_csv(patient_evidence_csv)
+    required = {"node_idx", "rank", "feature"}
+    missing = sorted(required.difference(evidence.columns))
+    if missing:
+        raise KeyError(f"Patient evidence is missing columns: {missing}")
+    if correct_only:
+        class_columns = {"true_class", "pred_class"}
+        if not class_columns.issubset(evidence.columns):
+            raise KeyError(
+                "Correct-only faithfulness evaluation requires true_class and "
+                "pred_class in patient evidence"
+            )
+        evidence = evidence[
+            evidence["true_class"].astype(str).str.strip()
+            == evidence["pred_class"].astype(str).str.strip()
+        ]
+    evidence = evidence.sort_values(["node_idx", "rank"])
+    feature_to_index = {name: index for index, name in enumerate(feature_names)}
+    unknown = sorted(set(evidence["feature"]).difference(feature_to_index))
+    if unknown:
+        raise ValueError(f"Evidence features are absent from the model matrix: {unknown}")
+
+    top_by_node = {
+        int(node_idx): [feature_to_index[name] for name in group["feature"].tolist()]
+        for node_idx, group in evidence.groupby("node_idx", sort=True)
+    }
+    node_indices = np.array(sorted(top_by_node), dtype=int)
+    if len(node_indices) == 0:
+        raise ValueError("Patient evidence contains no explained nodes")
+
+    base_probabilities = _ensemble_probabilities(
+        models,
+        X_tensor,
+        A_norm_tensor,
+        device,
+        X_edge=X_edge,
+        edge_index=edge_index,
+        A_temporal=A_temporal,
+    )
+    baseline_predictions = base_probabilities[node_indices].argmax(axis=1)
+    baseline_accuracy = float(np.mean(baseline_predictions == np.asarray(y_all)[node_indices]))
+
+    top_masked = X_tensor.clone()
+    for node_idx, feature_indices in top_by_node.items():
+        top_masked[node_idx, feature_indices] = 0.0
+    top_probabilities = _ensemble_probabilities(
+        models,
+        top_masked,
+        A_norm_tensor,
+        device,
+        X_edge=X_edge,
+        edge_index=edge_index,
+        A_temporal=A_temporal,
+    )
+    top_metrics = _faithfulness_metrics(
+        base_probabilities, top_probabilities, np.asarray(y_all), node_indices
+    )
+
+    rng = np.random.default_rng(seed)
+    all_features = np.arange(X_tensor.shape[1], dtype=int)
+    random_metrics = []
+    for _ in range(random_repeats):
+        random_masked = X_tensor.clone()
+        for node_idx, excluded in top_by_node.items():
+            candidates = np.setdiff1d(all_features, np.asarray(excluded), assume_unique=False)
+            chosen = rng.choice(candidates, size=len(excluded), replace=False)
+            random_masked[node_idx, chosen] = 0.0
+        random_probabilities = _ensemble_probabilities(
+            models,
+            random_masked,
+            A_norm_tensor,
+            device,
+            X_edge=X_edge,
+            edge_index=edge_index,
+            A_temporal=A_temporal,
+        )
+        random_metrics.append(
+            _faithfulness_metrics(
+                base_probabilities, random_probabilities, np.asarray(y_all), node_indices
+            )
+        )
+
+    metric_names = list(top_metrics)
+    random_summary = {}
+    for metric_name in metric_names:
+        values = np.array([row[metric_name] for row in random_metrics], dtype=float)
+        random_summary[metric_name] = {
+            "mean": float(values.mean()),
+            "sd": float(values.std(ddof=1)) if len(values) > 1 else 0.0,
+            "ci95": [float(value) for value in np.percentile(values, [2.5, 97.5])],
+        }
+
+    random_drops = np.array(
+        [row["mean_predicted_class_probability_drop"] for row in random_metrics]
+    )
+    empirical_p = float(
+        (1 + np.sum(random_drops >= top_metrics["mean_predicted_class_probability_drop"]))
+        / (len(random_drops) + 1)
+    )
+    output = {
+        "design": {
+            "explained_nodes": int(len(node_indices)),
+            "correctly_classified_only": bool(correct_only),
+            "baseline_accuracy_on_explained_nodes": baseline_accuracy,
+            "features_removed_per_node": sorted(
+                {len(indices) for indices in top_by_node.values()}
+            ),
+            "replacement_value": "zero in preprocessed space (training mean for standardized numeric inputs)",
+            "graphs_held_fixed": True,
+            "random_repeats": int(random_repeats),
+            "seed": int(seed),
+        },
+        "top_ranked_deletion": top_metrics,
+        "matched_random_deletion": random_summary,
+        "top_minus_random_mean_probability_drop": float(
+            top_metrics["mean_predicted_class_probability_drop"] - random_drops.mean()
+        ),
+        "empirical_one_sided_p": empirical_p,
+    }
+    with open(Path(out_dir) / "explanation_faithfulness.json", "w") as handle:
+        json.dump(output, handle, indent=2)
+    rows = []
+    for metric_name, value in top_metrics.items():
+        rows.append({"condition": "top_ranked", "metric": metric_name, "value": value})
+        rows.append(
+            {
+                "condition": "matched_random_mean",
+                "metric": metric_name,
+                "value": random_summary[metric_name]["mean"],
+            }
+        )
+    pd.DataFrame(rows).to_csv(Path(out_dir) / "explanation_faithfulness.csv", index=False)
+    return output
 
 
 # Neighbor Influence Explanation
@@ -2729,7 +3053,7 @@ def print_neighbor_influence_summary(node_results, y_all, c2i, classes):
         for cls in classes:
             bar_pct = class_distribution.get(cls, 0.0)
             filled  = int(bar_pct / 5)
-            bar     = "█" * filled + "░" * (20 - filled)
+            bar     = "#" * filled + "." * (20 - filled)
             print(f"    {short_cls.get(cls, cls):<4} {bar}  {bar_pct:5.1f}%")
 
         print(f"  Top influential neighbors")
@@ -3383,6 +3707,41 @@ def run_single_fold(df, y_all, edge_feat_cols, classes, c2i,
         "A_temporal_norm_tensor": A_temporal_norm_tensor,
         "X_tensor": X_tensor, "A_norm_tensor": A_norm_tensor,
     }
+
+    if getattr(args, "mci_decision_adjustment", False) and has_test:
+        validation_probabilities = res_va["probs"][val_mask]
+        validation_labels = y_all[val_mask]
+        offset, validation_score = select_mci_log_probability_offset(
+            validation_probabilities, validation_labels
+        )
+        adjusted_test = apply_mci_log_probability_offset(
+            res_te["probs"][test_mask], offset
+        )
+        adjusted_test_metrics = evaluate_probability_rows(
+            adjusted_test, y_all[test_mask]
+        )
+        result["decision_adjustment"] = {
+            "name": "validation-selected MCI log-probability offset",
+            "selection_partition": "validation",
+            "offset_grid": {"minimum": -1.0, "maximum": 1.0, "steps": 51},
+            "mci_log_probability_offset": float(offset),
+            "validation_balanced_accuracy_before": float(res_va["balanced_accuracy"]),
+            "validation_balanced_accuracy_after": float(validation_score),
+            "test_balanced_accuracy_before": float(res_te["balanced_accuracy"]),
+            "test_balanced_accuracy_after": float(
+                adjusted_test_metrics["balanced_accuracy"]
+            ),
+            "adjusted_test": adjusted_test_metrics,
+        }
+        if verbose:
+            print(
+                f"\n  Validation-selected MCI offset: {offset:+.4f} "
+                f"(validation BA {res_va['balanced_accuracy']:.4f} -> {validation_score:.4f})"
+            )
+            print(
+                f"  Adjusted test balanced accuracy: {res_te['balanced_accuracy']:.4f} -> "
+                f"{adjusted_test_metrics['balanced_accuracy']:.4f}"
+            )
 
     # Reset the RNG once, outside the training/checkpoint branches, so GNNExplainer and
     # counterfactual search are reproducible from here regardless of whether the ensemble
@@ -4177,6 +4536,7 @@ def run_nested_cv(df, y_all, edge_feat_cols, classes, c2i,
             "test_classification_report": fold_result['test'].get('classification_report', {}),
             "test_auc_ovr_macro": fold_result['test'].get('auc_ovr_macro', float('nan')),
             "test_per_class_ap": fold_result['test'].get('per_class_ap', {}),
+            "decision_adjustment": fold_result.get("decision_adjustment"),
         })
 
     # --- Aggregate results ---
@@ -4198,6 +4558,30 @@ def run_nested_cv(df, y_all, edge_feat_cols, classes, c2i,
     print(f"  Balanced Accuracy: {bal_ci['mean']:.4f} +/- {bal_ci['std']:.4f}  "
           f"  95% CI: [{bal_ci['ci_lower']:.4f}, {bal_ci['ci_upper']:.4f}]")
     print(f"  Per-fold: {[f'{a:.4f}' for a in bal_accs]}")
+
+    adjusted_bal_accs = [
+        r["decision_adjustment"]["test_balanced_accuracy_after"]
+        for r in outer_results
+        if r.get("decision_adjustment")
+    ]
+    adjusted_bal_ci = {}
+    adjusted_recall_cis = {}
+    if len(adjusted_bal_accs) == len(outer_results):
+        adjusted_bal_ci = compute_ci(adjusted_bal_accs, clip=(0, 1))
+        print(
+            f"  Validation-adjusted balanced accuracy: {adjusted_bal_ci['mean']:.4f} "
+            f"+/- {adjusted_bal_ci['std']:.4f}  95% CI: "
+            f"[{adjusted_bal_ci['ci_lower']:.4f}, {adjusted_bal_ci['ci_upper']:.4f}]"
+        )
+        for cls in classes:
+            class_key = str(c2i[cls])
+            recalls = [
+                r["decision_adjustment"]["adjusted_test"]["classification_report"]
+                .get(class_key, {})
+                .get("recall", 0.0)
+                for r in outer_results
+            ]
+            adjusted_recall_cis[cls] = compute_ci(recalls, clip=(0, 1))
 
     recall_cis = {}
     for cls in classes:
@@ -4256,6 +4640,9 @@ def run_nested_cv(df, y_all, edge_feat_cols, classes, c2i,
         "balanced_accuracy_std": float(np.std(bal_accs)),
         "balanced_accuracy_ci": bal_ci,
         "per_fold_bal_acc": [float(a) for a in bal_accs],
+        "decision_adjusted_balanced_accuracy_ci": _clean_for_json(adjusted_bal_ci),
+        "decision_adjusted_per_fold_bal_acc": [float(a) for a in adjusted_bal_accs],
+        "decision_adjusted_per_class_recall_ci": _clean_for_json(adjusted_recall_cis),
         "per_class_recall_mean": {cls: float(np.mean(v)) for cls, v in per_class_recalls.items() if v},
         "per_class_recall_std": {cls: float(np.std(v)) for cls, v in per_class_recalls.items() if v},
         "per_class_recall_ci": _clean_for_json(recall_cis),
@@ -4364,6 +4751,18 @@ def main():
     ap.add_argument("--verbose", action="store_true")
     ap.add_argument("--no_explain", action="store_true", default=False,
                     help="Skip GNNExplainer and counterfactual explanations (faster runs)")
+    ap.add_argument(
+        "--faithfulness_evidence_csv",
+        default=None,
+        help="Optional patient_evidence.csv from the same saved checkpoints. Runs a "
+             "top-feature deletion test against matched random masks.",
+    )
+    ap.add_argument(
+        "--faithfulness_random_repeats",
+        type=int,
+        default=100,
+        help="Matched random deletion repetitions for explanation faithfulness (default: 100).",
+    )
     ap.add_argument("--load_checkpoints", action="store_true", default=False,
                     help="Skip ensemble training; load saved model_spectral_gcn_seed*.pt "
                          "checkpoints from out_dir instead. Preprocessing, split, and graph "
@@ -4382,6 +4781,13 @@ def main():
                     help="Number of inner CV folds for HP tuning (default: 3)")
     ap.add_argument("--inner_seeds", type=int, default=1,
                     help="Ensemble seeds per inner CV run (default: 1, for speed)")
+    ap.add_argument(
+        "--mci_decision_adjustment",
+        action="store_true",
+        default=False,
+        help="Select an MCI log-probability offset on validation rows only, lock it, "
+             "and report adjusted test metrics separately from the raw model.",
+    )
     ap.add_argument("--counterfactual", action="store_true", default=True,
                     help="Run counterfactual explanation after GNNExplainer (post-hoc, no model change)")
     ap.add_argument("--no_counterfactual", dest="counterfactual", action="store_false",
@@ -4610,6 +5016,36 @@ def main():
     if "uncertainty" in res_te:
         plot_uncertainty_violin(res_te["uncertainty"], y_all, test_mask, classes, out_dir)
 
+    faithfulness_result = None
+    if args.faithfulness_evidence_csv:
+        feature_names = get_feature_names(result["pre"], result["num_cols"], result["cat_cols"])
+        if len(feature_names) != X_tensor.shape[1]:
+            raise ValueError(
+                f"Preprocessor returned {len(feature_names)} feature names for "
+                f"a {X_tensor.shape[1]}-column model matrix"
+            )
+        faithfulness_result = evaluate_explanation_faithfulness(
+            ensemble_models,
+            X_tensor,
+            A_norm_tensor,
+            y_all,
+            feature_names,
+            args.faithfulness_evidence_csv,
+            device,
+            out_dir,
+            X_edge=X_edge_tensor,
+            edge_index=edge_index_tensor,
+            A_temporal=A_temporal_norm_tensor,
+            random_repeats=args.faithfulness_random_repeats,
+            seed=args.seed,
+        )
+        print(
+            "  [faithfulness] Top-feature probability drop "
+            f"{faithfulness_result['top_ranked_deletion']['mean_predicted_class_probability_drop']:.4f}; "
+            "matched random mean "
+            f"{faithfulness_result['matched_random_deletion']['mean_predicted_class_probability_drop']['mean']:.4f}"
+        )
+
     # ---- Save ----
     def _strip_probs(d):
         return {k: v for k, v in d.items() if k not in ("probs", "uncertainty")}
@@ -4629,6 +5065,8 @@ def main():
             "args": vars(args),
             "feature_importance": {k: v for k, v in class_importance.items()},
             "uncertainty_summary": _build_uncertainty_summary(res_te, y_all, test_mask, classes, c2i),
+            "decision_adjustment": result.get("decision_adjustment"),
+            "explanation_faithfulness": faithfulness_result,
         }, f, indent=2)
 
     with open(out_dir / "label_mapping.json", "w") as f:
@@ -4659,7 +5097,56 @@ def main():
         per_seed_rows.append(row)
     pd.DataFrame(per_seed_rows).to_csv(out_dir / "per_seed_metrics.csv", index=False)
 
-    _save_ensemble_probabilities_csv(res_te, y_all, test_mask, classes, out_dir, df=df)
+    _save_ensemble_probabilities_csv(
+        res_va,
+        y_all,
+        val_mask,
+        classes,
+        out_dir,
+        df=df,
+        filename="validation_ensemble_probabilities.csv",
+    )
+    _save_ensemble_probabilities_csv(
+        res_te,
+        y_all,
+        test_mask,
+        classes,
+        out_dir,
+        df=df,
+        filename="ensemble_probabilities.csv",
+    )
+    _save_per_seed_probabilities_csv(
+        ensemble_models,
+        seeds,
+        X_tensor,
+        result["A_norm_tensor"],
+        y_all,
+        val_mask,
+        classes,
+        device,
+        out_dir,
+        "validation_seed_probabilities.csv",
+        df=df,
+        X_edge=result["X_edge_tensor"],
+        edge_index=result["edge_index_tensor"],
+        A_temporal=result["A_temporal_norm_tensor"],
+    )
+    _save_per_seed_probabilities_csv(
+        ensemble_models,
+        seeds,
+        X_tensor,
+        result["A_norm_tensor"],
+        y_all,
+        test_mask,
+        classes,
+        device,
+        out_dir,
+        "test_seed_probabilities.csv",
+        df=df,
+        X_edge=result["X_edge_tensor"],
+        edge_index=result["edge_index_tensor"],
+        A_temporal=result["A_temporal_norm_tensor"],
+    )
 
 
     print(f"RESULTS SUMMARY (ENSEMBLE of {args.num_seeds} seeds)")

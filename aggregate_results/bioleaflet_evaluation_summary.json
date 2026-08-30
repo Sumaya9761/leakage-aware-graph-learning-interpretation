@@ -1,0 +1,40 @@
+{
+  "evaluation_layer": "corrected deterministic visit-level BioLeaflet template",
+  "rouge_scope": "template-to-reference overlap from this deterministic audit; not the held-out FLAN-T5 narrative evaluation reported separately",
+  "n_leaflets": 148,
+  "n_checked_fields": 2108,
+  "field_accuracy": 1.0,
+  "pass_rate": 1.0,
+  "fact_prf": {
+    "true_positive": 2108,
+    "false_positive": 0,
+    "false_negative": 0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0
+  },
+  "restricted_language_violations": 0,
+  "feature_scope_counts": {
+    "patient-specific GNNExplainer attribution signals": 148
+  },
+  "rouge": {
+    "interpretation": {
+      "rouge1_f1": 0.7335123270153838,
+      "rouge2_f1": 0.5747244385682312,
+      "rougeL_f1": 0.7030565929599991,
+      "rougeLsum_f1": 0.7030565929599991
+    },
+    "interpretation_summary": {
+      "rouge1_f1": 0.6387212590868837,
+      "rouge2_f1": 0.46552421430221647,
+      "rougeL_f1": 0.5981976190547482,
+      "rougeLsum_f1": 0.5981976190547482
+    },
+    "summary": {
+      "rouge1_f1": 0.30888938291993523,
+      "rouge2_f1": 0.10859950859950858,
+      "rougeL_f1": 0.2468320259154572,
+      "rougeLsum_f1": 0.2468320259154572
+    }
+  }
+}

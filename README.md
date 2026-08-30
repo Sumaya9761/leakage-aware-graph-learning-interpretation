@@ -9,10 +9,15 @@ patient-level interpretation. ADNI data are not distributed here.
 - `hybrid_gnn.py`: hybrid population GCN, temporal GCN, and MLP model
 - `baseline_comparison.py`: subject-disjoint conventional ML baselines
 - `bio_leaflet.py`: structured patient-level interpretation and verification
+- `generate_and_evaluate_bioleaflets.py`: visit-matched BioLeaflet assembly,
+  deterministic field audit, and ROUGE evaluation
 - `ADNIT5.py`: FLAN-T5 refinement and evaluation
 - `run_bioleaflet_rag_prototype.py`: evidence-grounded follow-up evaluation
+- `publication_validation.py`: calibration, matched logistic regression, and
+  participant-cluster bootstrap analysis
+- `verifier_stress_test.py`: clean-control and deterministic corruption tests
 - `experiment_commands.json`: commands used for all reported experiments
-- `tests/`: data-free tests for fixed-split and target-label behavior
+- `tests/`: data-free tests for splitting, targets, verification, and metrics
 
 ## Environment
 
@@ -113,10 +118,45 @@ python baseline_comparison.py \
 Additional nested-CV, inductive, ablation, interpretation, FLAN-T5, and RAG
 commands are recorded in `experiment_commands.json`.
 
-Non-identifying aggregate metrics from the verified runs are recorded in
-`aggregate_results/classification_summary.json`. Per-visit probabilities,
-participant assignments, model checkpoints, and ADNI records are deliberately
-excluded.
+## Publication validation analyses
+
+The nested-CV command reports the raw GNN result and, separately, a post-hoc
+MCI decision sensitivity analysis. Within each outer fold, an additive MCI
+log-probability offset is selected using only the internal validation rows,
+locked, and then applied to the untouched outer-test rows. This is a decision
+rule adjustment, not probability calibration, and the raw result remains the
+primary estimate.
+
+`publication_validation.py` uses the fixed subject-disjoint split to fit a
+matched logistic-regression comparator on training rows only, select
+temperature scaling and any candidate fusion on validation rows only, and
+compute calibration metrics plus 10,000-replicate participant-cluster
+bootstrap intervals. If validation selects a GNN fusion weight of 1.0, no
+fusion improvement should be claimed.
+
+GNNExplainer produces a local ranking for every held-out visit, targeting the
+ensemble-predicted class. Aggregate class profiles are computed separately
+from correctly classified visits. BioLeaflet reports label each ranking as
+patient-specific and explicitly label the predicted-class aggregate fallback
+when a legacy result directory has no local evidence for a visit.
+
+Explanation faithfulness is evaluated by setting each correctly classified
+visit's three highest-ranked preprocessed inputs to zero while holding both
+graphs fixed. The resulting predicted-class probability drop is compared with
+100 matched random feature deletions. Because the analyzed set is restricted
+to correctly classified visits, this is a local ranking-faithfulness test
+rather than a causal analysis.
+
+`verifier_stress_test.py` first checks clean BioLeaflet and RAG outputs, then
+applies deterministic single-error and contradiction mutations. The reported
+detection rates characterize those predefined challenges; they are not
+estimates of safety for unconstrained language-model output or clinical use.
+
+Non-identifying aggregate metrics from the verified runs are recorded under
+`aggregate_results/`, including classification, calibration, explanation
+faithfulness, BioLeaflet, RAG, and verifier-stress summaries. Per-visit
+probabilities, participant assignments, model checkpoints, and ADNI records
+are deliberately excluded.
 
 ## Data availability
 

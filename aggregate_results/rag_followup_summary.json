@@ -1,0 +1,22 @@
+{
+  "n_leaflets": 148,
+  "n_answers": 783,
+  "mean_evidence_per_answer": 3.0,
+  "mean_top_retrieval_score": 1.0,
+  "patient_fact_pass_rate": 1.0,
+  "patient_fact_consistency_pass_rate": 1.0,
+  "valid_citations_pass_rate": 1.0,
+  "citation_coverage_pass_rate": 1.0,
+  "question_relevance_pass_rate": 1.0,
+  "restricted_language_absent_rate": 1.0,
+  "non_diagnostic_pass_rate": 1.0,
+  "sentence_support_pass_rate": 1.0,
+  "graph_agreement_pass_rate": 1.0,
+  "overall_pass_rate": 1.0,
+  "n_feature_context": 148,
+  "n_graph_context": 148,
+  "n_uncertainty_context": 148,
+  "n_diagnostic_safety": 148,
+  "n_mci_context": 148,
+  "n_counterfactual_context": 43
+}

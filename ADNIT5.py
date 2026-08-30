@@ -1744,7 +1744,7 @@ def assemble_hybrid_leaflet(t5_narrative, gnn_sections, ctx):  # DEPRECATED
 
     # Patient header (from ctx — guaranteed accurate)
     lines.append(f"Patient ID:       {ctx['patient_id']}")
-    lines.append(f"Clinical Status:  {ctx['clinical_status']}")
+    lines.append(f"Model Classification: {ctx['clinical_status']}")
     lines.append(f"Age:              {ctx['age']} years")
     lines.append(f"Sex:              {ctx['sex']}")
     lines.append(f"APOE4 Status:     {ctx['apoe4_status']}")

@@ -1,0 +1,65 @@
+{
+  "design": {
+    "explained_nodes": 112,
+    "correctly_classified_only": true,
+    "baseline_accuracy_on_explained_nodes": 1.0,
+    "features_removed_per_node": [
+      3
+    ],
+    "replacement_value": "zero in preprocessed space (training mean for standardized numeric inputs)",
+    "graphs_held_fixed": true,
+    "random_repeats": 100,
+    "seed": 42
+  },
+  "top_ranked_deletion": {
+    "mean_predicted_class_probability_drop": 0.047214072197675705,
+    "median_predicted_class_probability_drop": 0.04960054159164429,
+    "fraction_positive_probability_drop": 1.0,
+    "prediction_flip_rate": 0.044642857142857144,
+    "balanced_accuracy": 0.9599832390530065
+  },
+  "matched_random_deletion": {
+    "mean_predicted_class_probability_drop": {
+      "mean": 0.002955209909778205,
+      "sd": 0.0009462093480743281,
+      "ci95": [
+        0.0012666202761465683,
+        0.004680449597071854
+      ]
+    },
+    "median_predicted_class_probability_drop": {
+      "mean": 0.0031342193484306335,
+      "sd": 0.0010042467622219627,
+      "ci95": [
+        0.0014337226748466492,
+        0.004937177151441573
+      ]
+    },
+    "fraction_positive_probability_drop": {
+      "mean": 0.6229464285714286,
+      "sd": 0.03804733104448101,
+      "ci95": [
+        0.553125,
+        0.6968749999999999
+      ]
+    },
+    "prediction_flip_rate": {
+      "mean": 0.0030357142857142857,
+      "sd": 0.004436239462999908,
+      "ci95": [
+        0.0,
+        0.008928571428571428
+      ]
+    },
+    "balanced_accuracy": {
+      "mean": 0.9973266289545358,
+      "sd": 0.003932946606000656,
+      "ci95": [
+        0.9915880997276346,
+        1.0
+      ]
+    }
+  },
+  "top_minus_random_mean_probability_drop": 0.0442588622878975,
+  "empirical_one_sided_p": 0.009900990099009901
+}

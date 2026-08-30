@@ -1,0 +1,154 @@
+{
+  "schema_version": 1,
+  "design": "clean negative controls plus deterministic single-error mutations",
+  "bioleaflet_verifier": {
+    "clean_outputs": 148,
+    "clean_passed": 148,
+    "specificity": 1.0,
+    "corrupted_outputs": 1875,
+    "corruptions_detected": 1875,
+    "sensitivity": 1.0,
+    "by_challenge": {
+      "contradictory_age": {
+        "n": 148,
+        "detected": 148,
+        "detection_rate": 1.0
+      },
+      "contradictory_confidence": {
+        "n": 148,
+        "detected": 148,
+        "detection_rate": 1.0
+      },
+      "contradictory_graph_agreement": {
+        "n": 148,
+        "detected": 148,
+        "detection_rate": 1.0
+      },
+      "forbidden_diagnostic_claim": {
+        "n": 148,
+        "detected": 148,
+        "detection_rate": 1.0
+      },
+      "missing_age": {
+        "n": 148,
+        "detected": 148,
+        "detection_rate": 1.0
+      },
+      "stage_mismatch": {
+        "n": 99,
+        "detected": 99,
+        "detection_rate": 1.0
+      },
+      "wrong_age": {
+        "n": 148,
+        "detected": 148,
+        "detection_rate": 1.0
+      },
+      "wrong_confidence": {
+        "n": 148,
+        "detected": 148,
+        "detection_rate": 1.0
+      },
+      "wrong_entropy": {
+        "n": 148,
+        "detected": 148,
+        "detection_rate": 1.0
+      },
+      "wrong_graph_agreement": {
+        "n": 148,
+        "detected": 148,
+        "detection_rate": 1.0
+      },
+      "wrong_mmse": {
+        "n": 148,
+        "detected": 148,
+        "detection_rate": 1.0
+      },
+      "wrong_patient_id": {
+        "n": 148,
+        "detected": 148,
+        "detection_rate": 1.0
+      },
+      "wrong_sex": {
+        "n": 148,
+        "detected": 148,
+        "detection_rate": 1.0
+      }
+    }
+  },
+  "rag_verifier": {
+    "clean_outputs": 783,
+    "clean_passed": 783,
+    "specificity": 1.0,
+    "corrupted_outputs": 8909,
+    "corruptions_detected": 8909,
+    "sensitivity": 1.0,
+    "by_challenge": {
+      "contradictory_confidence": {
+        "n": 783,
+        "detected": 783,
+        "detection_rate": 1.0
+      },
+      "contradictory_graph_agreement": {
+        "n": 148,
+        "detected": 148,
+        "detection_rate": 1.0
+      },
+      "contradictory_prediction": {
+        "n": 783,
+        "detected": 783,
+        "detection_rate": 1.0
+      },
+      "contradictory_true_label": {
+        "n": 783,
+        "detected": 783,
+        "detection_rate": 1.0
+      },
+      "invalid_citation": {
+        "n": 783,
+        "detected": 783,
+        "detection_rate": 1.0
+      },
+      "missing_citations": {
+        "n": 783,
+        "detected": 783,
+        "detection_rate": 1.0
+      },
+      "missing_non_diagnostic_label": {
+        "n": 783,
+        "detected": 783,
+        "detection_rate": 1.0
+      },
+      "restricted_clinical_language": {
+        "n": 783,
+        "detected": 783,
+        "detection_rate": 1.0
+      },
+      "unsupported_uncited_sentence": {
+        "n": 783,
+        "detected": 783,
+        "detection_rate": 1.0
+      },
+      "wrong_graph_agreement": {
+        "n": 148,
+        "detected": 148,
+        "detection_rate": 1.0
+      },
+      "wrong_patient_id": {
+        "n": 783,
+        "detected": 783,
+        "detection_rate": 1.0
+      },
+      "wrong_prediction": {
+        "n": 783,
+        "detected": 783,
+        "detection_rate": 1.0
+      },
+      "wrong_true_label": {
+        "n": 783,
+        "detected": 783,
+        "detection_rate": 1.0
+      }
+    }
+  }
+}

@@ -237,6 +237,8 @@ results/
 # Restricted participant-level outputs
 split_subject_ids*.csv
 ensemble_probabilities*.csv
+*_ensemble_probabilities*.csv
+*_seed_probabilities*.csv
 uncertainty_estimates*.csv
 patient_evidence*.csv
 neighbor_influence*.csv

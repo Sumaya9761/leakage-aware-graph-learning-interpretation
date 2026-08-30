@@ -266,6 +266,12 @@ def load_gnn_outputs(results_dir):
             data["label_mapping"] = json.load(f)
 
     data["feature_importance"] = pd.read_csv(rdir / "feature_importance.csv")
+    patient_evidence_path = rdir / "patient_evidence.csv"
+    data["patient_evidence"] = (
+        pd.read_csv(patient_evidence_path)
+        if patient_evidence_path.exists()
+        else pd.DataFrame()
+    )
     data["uncertainty"] = pd.read_csv(rdir / "uncertainty_estimates.csv")
     data["neighbors"] = pd.read_csv(rdir / "neighbor_influence.csv")
     data["counterfactuals"] = pd.read_csv(rdir / "counterfactual_explanations.csv")
@@ -280,6 +286,11 @@ def load_gnn_outputs(results_dir):
         data["feature_importance"]["class"] = (
             data["feature_importance"]["class"].astype(str).str.strip()
         )
+    for col in ("pred_class", "true_class"):
+        if col in data["patient_evidence"].columns:
+            data["patient_evidence"][col] = (
+                data["patient_evidence"][col].astype(str).str.strip()
+            )
 
     _CACHE[key] = data
     return data
@@ -296,6 +307,28 @@ def get_top_features(fi_df, pred_class, top_k=5):
     """Return top-K features for a given predicted class from GNNExplainer."""
     cls_df = fi_df[fi_df["class"] == str(pred_class)].sort_values("rank")
     return cls_df.head(top_k)[["feature", "importance"]].to_dict("records")
+
+
+def get_feature_attributions(gnn, node_idx, pred_class, top_k=5):
+    """Return local attributions when available, otherwise a labeled fallback."""
+    evidence = gnn.get("patient_evidence")
+    if evidence is not None and not evidence.empty and "node_idx" in evidence.columns:
+        local = evidence[pd.to_numeric(evidence["node_idx"], errors="coerce") == int(node_idx)]
+        if "pred_class" in local.columns:
+            local = local[local["pred_class"] == str(pred_class)]
+        if not local.empty:
+            local = local.sort_values("rank").head(top_k)
+            return (
+                local[["feature", "importance"]].to_dict("records"),
+                "patient-specific",
+                "Patient-specific attribution for this model prediction",
+            )
+
+    return (
+        get_top_features(gnn["feature_importance"], pred_class, top_k=top_k),
+        "predicted-class aggregate",
+        "Predicted-class aggregate attribution (local evidence unavailable)",
+    )
 
 
 # Longitudinal deltas
@@ -357,7 +390,9 @@ def get_patient_context(subject_id, node_idx, gnn, patient_df, session_id=None):
         latest = pdf.sort_values("_vm").iloc[-1]
 
     # --- Top features ---
-    top_feats = get_top_features(gnn["feature_importance"], pred_class, top_k=5)
+    top_feats, attribution_scope, attribution_scope_label = get_feature_attributions(
+        gnn, node_idx, pred_class, top_k=5
+    )
     feat_list = []
     for row in top_feats:
         fname = row["feature"]
@@ -459,6 +494,8 @@ def get_patient_context(subject_id, node_idx, gnn, patient_df, session_id=None):
 
         # Top features
         "top_features": feat_list,
+        "feature_attribution_scope": attribution_scope,
+        "feature_attribution_scope_label": attribution_scope_label,
 
         # Neighborhood
         "neighbor_dist_str": neighbor_dist_str,
@@ -507,69 +544,14 @@ def get_patient_context(subject_id, node_idx, gnn, patient_df, session_id=None):
 # Stage-specific narrative builders
 
 def build_stage_interpretation(ctx):
-    """Return stage-conditional narrative text using hedged clinical language."""
-    pc = ctx["pred_class"]
-    lines = []
-
-    if pc == "0":
-        lines.append(
-            "Cognition: Scores within expected range for healthy aging "
-            "— cognition and function preserved."
-        )
-        if ctx["hippo_vol"] != "N/A":
-            lines.append(
-                "Structure: MRI of hippocampus and entorhinal cortex shows "
-                "no significant atrophy beyond age norms."
-            )
-        else:
-            lines.append("Structure: MRI data not available for this patient.")
-        if ctx["ptau"] != "N/A":
-            lines.append(
-                "CSF: No significant Alzheimer's-type pathology indicated."
-            )
-        else:
-            lines.append("CSF: Biomarker data not available for this patient.")
-
-    elif pc == "0.5":
-        lines.append(
-            "Cognition: Mild deficits relative to age norms "
-            "— consistent with mild cognitive impairment."
-        )
-        if ctx["hippo_vol"] != "N/A":
-            lines.append(
-                "Structure: MRI may show early medial temporal changes "
-                "— warrants monitoring."
-            )
-        else:
-            lines.append("Structure: MRI data not available for this patient.")
-        if ctx["ptau"] != "N/A":
-            lines.append(
-                "CSF: Evaluate in context of possible early "
-                "Alzheimer's-type changes."
-            )
-        else:
-            lines.append("CSF: Biomarker data not available for this patient.")
-
-    else:  # AD ("1+")
-        lines.append(
-            "Cognition: Impairment across global cognition, function, "
-            "and memory — consistent with dementia-stage decline."
-        )
-        if ctx["hippo_vol"] != "N/A":
-            lines.append(
-                "Structure: MRI shows medial temporal changes "
-                "consistent with neurodegeneration."
-            )
-        else:
-            lines.append("Structure: MRI data not available for this patient.")
-        if ctx["ptau"] != "N/A":
-            lines.append(
-                "CSF: Biomarkers support Alzheimer's-type pathology."
-            )
-        else:
-            lines.append("CSF: Biomarker data not available for this patient.")
-
-    return "\n".join(lines)
+    """Describe the model output without inferring unverified pathology."""
+    predicted = ctx["pred_class_display"]
+    return (
+        f"Model output: this visit was assigned to the {predicted} class.\n"
+        "This assignment reflects the trained model's use of the supplied "
+        "multimodal inputs. It does not independently establish cognitive "
+        "status, biomarker pathology, or a clinical diagnosis."
+    )
 
 
 def build_longitudinal_text(ctx):
@@ -623,7 +605,7 @@ def build_longitudinal_text(ctx):
             if v < -200:
                 lines.append("Hippocampal volume: reduction observed over time.")
             elif v < 0:
-                lines.append("Hippocampal volume: mild change, compatible with aging.")
+                lines.append("Hippocampal volume: small reduction observed over time.")
             else:
                 lines.append("Hippocampal volume: stable.")
         except (ValueError, TypeError):
@@ -634,9 +616,9 @@ def build_longitudinal_text(ctx):
         try:
             v = float(ent_d)
             if v < -0.2:
-                lines.append("Entorhinal cortex: thinning observed.")
+                lines.append("Entorhinal cortex volume: reduction observed.")
             else:
-                lines.append("Entorhinal cortex: stable.")
+                lines.append("Entorhinal cortex volume: no prespecified reduction detected.")
         except (ValueError, TypeError):
             pass
 
@@ -655,13 +637,14 @@ def build_longitudinal_text(ctx):
         pass
 
     if cog_decline and struct_decline:
-        lines.append("Overall trajectory is consistent with progressive impairment.")
+        lines.append("Observed summary: MMSE and hippocampal volume both decreased.")
     elif cog_decline:
-        lines.append("Overall trajectory suggests gradual cognitive decline.")
+        lines.append("Observed summary: MMSE decreased without the prespecified hippocampal-volume decrease.")
     elif struct_decline:
-        lines.append("Structural changes are noted, though cognitive measures remain relatively stable.")
+        lines.append("Observed summary: hippocampal volume decreased without the prespecified MMSE decrease.")
     else:
-        lines.append("Overall trajectory is consistent with stable cognition.")
+        lines.append("Observed summary: neither prespecified decrease was detected.")
+    lines.append("These descriptive changes do not establish disease progression.")
 
     return "\n".join(lines)
 
@@ -671,16 +654,19 @@ def build_risk_context(ctx):
     lines = []
     apoe = ctx["apoe4_status"]
     if "Non-carrier" in apoe:
-        lines.append(f"Genetic: {apoe} — not an elevated genetic risk for late-onset AD.")
+        lines.append(
+            f"Genetic: {apoe} — no APOE4-associated increase in susceptibility; "
+            "other genetic and non-genetic risk factors remain."
+        )
     elif "Heterozygous" in apoe:
         lines.append(
-            f"Genetic: {apoe} — associated with moderately increased risk for "
-            f"late-onset AD."
+            f"Genetic: {apoe} — associated with increased population-level "
+            "susceptibility to late-onset AD, but not diagnostic for an individual."
         )
     elif "Homozygous" in apoe:
         lines.append(
-            f"Genetic: {apoe} — associated with substantially increased risk for "
-            f"late-onset AD."
+            f"Genetic: {apoe} — associated with higher population-level "
+            "susceptibility to late-onset AD, but not diagnostic for an individual."
         )
     else:
         lines.append(f"Genetic: APOE4 status — {apoe}.")
@@ -744,18 +730,12 @@ Used for subject-level interpretations with longitudinal context.
 
 
 def build_summary(ctx):
-    """Return stage-appropriate synthesis paragraph."""
-    pc = ctx["pred_class"]
-    lines = []
-    if pc == "0":
-        lines.append("Profile: Consistent with healthy cognitive aging.")
-        lines.append("No significant neurodegenerative change indicated.")
-    elif pc == "0.5":
-        lines.append("Profile: Consistent with mild cognitive impairment.")
-        lines.append("Early changes detected — continued monitoring recommended.")
-    else:
-        lines.append("Profile: Consistent with dementia-stage neurodegenerative change.")
-        lines.append("Supporting evidence: Cognitive, imaging, and biomarker findings.")
+    """Return a concise, non-diagnostic synthesis of the model output."""
+    lines = [
+        f"Model output: {ctx['pred_class_display']}.",
+        "The accompanying sections summarize model attribution, graph context, "
+        "longitudinal observations, counterfactual sensitivity, and uncertainty.",
+    ]
 
     if ctx["is_high_uncertainty"]:
         lines.append("Elevated uncertainty — interpret with caution.")
@@ -778,8 +758,7 @@ def build_neighborhood_interpretation(ctx):
     if label == "strong":
         return (
             f"The local patient neighborhood is dominated by {pred}, "
-            f"with strong agreement, indicating a consistent clinical "
-            f"pattern among similar patients."
+            f"with strong agreement in this model-defined graph context."
         )
     elif label == "moderate":
         return (
@@ -951,7 +930,7 @@ def render_key_biomarker_values(ctx):
 LEAFLET_TEMPLATE = Template("""\
 BRAIN HEALTH BIO-LEAFLET
 Patient ID: {{ patient_id }}
-Clinical Status: {{ clinical_status }} (Dx = {{ pred_class }})
+Model Classification: {{ clinical_status }} (code = {{ pred_class }})
 Age: {{ age }} years, Sex: {{ sex }}
 APOE genotype (genetic susceptibility marker): {{ apoe4_status }}
 Education: {{ education_years }} years
@@ -976,6 +955,13 @@ DISEASE PROGRESSION :
 {% endif %}\
 INTERPRETATION :
 {{ stage_interpretation }}
+
+MODEL FEATURE ATTRIBUTION :
+  Scope: {{ feature_attribution_scope_label }}
+{% for feat in top_features %}\
+  • {{ feat.display_name }}: {{ feat.value }}
+{% endfor %}\
+{{ biomarker_interpretation }}
 
 GRAPH CONTEXT :
   Graph agreement: {{ graph_agreement_pct }}%  (neighbours sharing the predicted class)
@@ -1023,6 +1009,7 @@ def render_leaflet(ctx):
     ctx.setdefault("key_biomarker_values", render_key_biomarker_values(ctx))
     # Build narrative sections
     ctx["stage_interpretation"] = build_stage_interpretation(ctx)
+    ctx["biomarker_interpretation"] = build_biomarker_interpretation(ctx)
     ctx["longitudinal_text"] = build_longitudinal_text(ctx)
     ctx["risk_context_text"] = build_risk_context(ctx)
     ctx["summary_text"] = build_summary(ctx)
@@ -1049,6 +1036,7 @@ def render_leaflet_with_t5(ctx, t5_stage_interpretation=None, t5_summary=None):
     # All deterministic narrative sections
     ctx["longitudinal_text"] = build_longitudinal_text(ctx)
     ctx["risk_context_text"] = build_risk_context(ctx)
+    ctx["biomarker_interpretation"] = build_biomarker_interpretation(ctx)
     ctx["neighborhood_interpretation"] = build_neighborhood_interpretation(ctx)
     ctx["counterfactual_interpretation"] = build_counterfactual_interpretation(ctx)
     ctx["uncertainty_interpretation"] = build_uncertainty_interpretation(ctx)
@@ -1089,7 +1077,11 @@ def extract_leaflet_facts(text):
     if m:
         facts["sex"] = m.group(1)
 
-    m = re.search(r"APOE4 Status:\s*(.+?)(?:\n|$)", text)
+    m = re.search(
+        r"(?:APOE4 Status|APOE genotype[^:]*):\s*(.+?)(?:\n|$)",
+        text,
+        flags=re.IGNORECASE,
+    )
     if m:
         facts["apoe4"] = m.group(1).strip()
 
@@ -1157,6 +1149,8 @@ def compute_fact_metrics(ground_truth, generated):
 
     for key in ground_truth:
         if key not in generated:
+            n_checked += 1
+            issues.append(f"{key}: required fact is missing from generated text")
             continue
         n_checked += 1
         gt_val = ground_truth[key]
@@ -1214,6 +1208,32 @@ def verify_leaflet(leaflet_text, ctx):
     src_facts = extract_source_facts(ctx)
     n_checked, n_correct, issues = compute_fact_metrics(src_facts, gen_facts)
 
+    # Reject contradictory duplicate claims even when one correct occurrence is
+    # also present. This closes the gap left by first-match extraction alone.
+    numeric_claim_patterns = {
+        "age": (r"Age:\s*([\d.]+)", 1.0),
+        "confidence_pct": (r"(?:Model|Prediction) confidence[^:]*:\s*([\d.]+)%", 0.5),
+        "mmse": (r"MMSE.*?:\s*(\d+)\s*/\s*30", 0.0),
+        "predictive_entropy": (r"Predictive entropy:\s*([\d.]+)", 0.01),
+        "graph_agreement_pct": (r"Graph agreement:\s*([\d.]+)%", 0.5),
+    }
+    for fact_name, (pattern, tolerance) in numeric_claim_patterns.items():
+        if fact_name not in src_facts:
+            continue
+        expected = float(src_facts[fact_name])
+        claims = [
+            float(value)
+            for value in re.findall(pattern, leaflet_text, flags=re.IGNORECASE)
+        ]
+        if any(abs(value - expected) > tolerance for value in claims):
+            issues.append(
+                f"CONTRADICTORY_FACT: {fact_name} includes a value inconsistent with source"
+            )
+
+    patient_claims = re.findall(r"Patient ID:\s*(\S+)", leaflet_text, flags=re.IGNORECASE)
+    if any(str(value) != str(src_facts.get("patient_id", "")) for value in patient_claims):
+        issues.append("CONTRADICTORY_FACT: patient_id includes an inconsistent value")
+
     # Hallucination check — scan rendered text for forbidden claims
     text_lower = leaflet_text.lower()
     forbidden = [
@@ -1221,6 +1241,10 @@ def verify_leaflet(leaflet_text, ctx):
         "definitive diagnosis", "alzheimer's confirmed",
         "clinical diagnosis of", "we diagnose",
         "patient has alzheimer",
+        "no significant atrophy beyond age norms",
+        "no significant alzheimer's-type pathology indicated",
+        "biomarkers support alzheimer's-type pathology",
+        "consistent with neurodegeneration",
     ]
     for term in forbidden:
         if term in text_lower:
@@ -1248,13 +1272,22 @@ def verify_leaflet(leaflet_text, ctx):
         "precision": round(precision, 4),
     }
     has_hallucination = any("HALLUCINATION" in i for i in issues)
-    status = "PASS" if (precision >= 0.95 and not has_hallucination) else "FAIL"
+    has_stage_mismatch = any("STAGE_MISMATCH" in i for i in issues)
+    has_contradictory_fact = any("CONTRADICTORY_FACT" in i for i in issues)
+    status = "PASS" if (
+        precision >= 0.95
+        and not has_hallucination
+        and not has_stage_mismatch
+        and not has_contradictory_fact
+    ) else "FAIL"
     return status, issues, scores
 
 
 # Main generation pipeline
 
-def generate_leaflet(subject_id, node_idx, gnn, data_df, verbose=False):
+def generate_leaflet(
+    subject_id, node_idx, gnn, data_df, verbose=False, session_id=None
+):
     """Full pipeline: assemble context → render → verify → return text."""
     # Get all visits for this subject
     patient_df = data_df[data_df["subject_id"] == subject_id]
@@ -1262,7 +1295,9 @@ def generate_leaflet(subject_id, node_idx, gnn, data_df, verbose=False):
         warnings.warn(f"Subject {subject_id} not found in data CSV; skipping.")
         return None
 
-    ctx = get_patient_context(subject_id, node_idx, gnn, patient_df)
+    ctx = get_patient_context(
+        subject_id, node_idx, gnn, patient_df, session_id=session_id
+    )
     leaflet = render_leaflet(ctx)
 
     status, issues, scores = verify_leaflet(leaflet, ctx)
@@ -1306,11 +1341,24 @@ def generate_all_leaflets(results_dir, data_csv, out_dir, verbose=False):
     for _, row in unc_df.iterrows():
         node_idx = int(row["node_idx"])
         subject_id = str(row["subject_id"]).strip()
+        if "clinical_session_id" in unc_df.columns and pd.notna(row.get("clinical_session_id")):
+            session_id = str(row["clinical_session_id"]).strip()
+        elif node_idx < len(data_df) and "clinical_session_id" in data_df.columns:
+            session_id = str(data_df.iloc[node_idx]["clinical_session_id"]).strip()
+        else:
+            session_id = None
 
         if verbose:
             print(f"Processing node {node_idx} ({subject_id})...")
 
-        result = generate_leaflet(subject_id, node_idx, gnn, data_df, verbose)
+        result = generate_leaflet(
+            subject_id,
+            node_idx,
+            gnn,
+            data_df,
+            verbose,
+            session_id=session_id,
+        )
         if result is None:
             continue
 
@@ -1337,6 +1385,7 @@ def generate_all_leaflets(results_dir, data_csv, out_dir, verbose=False):
         verification_rows.append({
             "subject_id": subject_id,
             "node_idx": node_idx,
+            "clinical_session_id": session_id,
             "pred_class": str(row["pred_class"]),
             "verification_status": status,
             "fields_checked": scores["fields_checked"],
