@@ -226,6 +226,21 @@ study_data_*.csv
 models/
 checkpoints/
 flan-t5-adni/
+*.pt
+*.pth
+*.ckpt
+*.safetensors
 
 # Experiment results
 results/
+
+# Restricted participant-level outputs
+split_subject_ids*.csv
+ensemble_probabilities*.csv
+uncertainty_estimates*.csv
+patient_evidence*.csv
+neighbor_influence*.csv
+counterfactual_explanations*.csv
+bioleaflets*.csv
+rag_followup_answers*.csv
+*_summary_leaflet*.txt

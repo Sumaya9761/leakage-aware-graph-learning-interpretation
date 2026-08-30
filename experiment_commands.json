@@ -1,5 +1,5 @@
 {
-  "main_model": "python hybrid_gnn.py --single study_data_no_cdr.csv --out_dir results/main_model --verbose",
+  "main_model": "python hybrid_gnn.py --single study_data_no_cdr.csv --out_dir results/main_model --target diagnosis --verbose",
 
   "nested_cv": "python hybrid_gnn.py --single study_data_no_cdr.csv --out_dir results/nested_cv --nested_cv --no_explain --verbose",
 
@@ -11,13 +11,15 @@
 
   "ablation_population_gcn": "python hybrid_gnn.py --single study_data_no_cdr.csv --out_dir results/ablation_population_gcn --no_mlp_branch --no_temporal_branch --verbose",
 
-  "cdr_node_feature_only": "python hybrid_gnn.py --single study_data_with_cdr.csv --out_dir results/cdr_node_feature_only --verbose",
+  "cdr_node_feature_only": "python hybrid_gnn.py --single study_data_with_cdr.csv --out_dir results/cdr_node_feature_only --target diagnosis --split_file results/main_model/split_subject_ids.csv --verbose",
 
-  "cdr_node_and_edge_features": "python hybrid_gnn.py --single study_data_with_cdr.csv --out_dir results/cdr_node_and_edge_features --edge_ablation cognition_cdr --verbose",
+  "cdr_node_and_edge_features": "python hybrid_gnn.py --single study_data_with_cdr.csv --out_dir results/cdr_node_and_edge_features --target diagnosis --edge_ablation cognition_cdr --split_file results/main_model/split_subject_ids.csv --verbose",
 
-  "cdr_target": "python hybrid_gnn.py --single study_data_with_cdr.csv --out_dir results/cdr_target --target cdr --verbose",
+  "cdr_matched_diagnosis": "python hybrid_gnn.py --single study_data_with_cdr.csv --out_dir results/cdr_matched_diagnosis --target diagnosis --require_cdr_complete --exclude_cdr_feature --split_file results/main_model/split_subject_ids.csv --no_explain --verbose",
 
-  "baseline_models": "python baseline_comparison.py",
+  "cdr_matched_target": "python hybrid_gnn.py --single study_data_with_cdr.csv --out_dir results/cdr_matched_target --target cdr --require_cdr_complete --split_file results/main_model/split_subject_ids.csv --no_explain --verbose",
+
+  "baseline_models": "python baseline_comparison.py --data_csv study_data_no_cdr.csv --out_dir results/baselines",
 
   "template_interpretation": "python bio_leaflet.py --results_dir results/main_model --data_csv study_data_no_cdr.csv --out_dir results/interpretations --verbose",
 

@@ -7,6 +7,7 @@
 import warnings
 warnings.filterwarnings('ignore')
 
+import argparse
 import json
 import re
 import numpy as np
@@ -50,22 +51,31 @@ print('All imports OK')
 # In[2]:
 
 
-try:
-    from google.colab import files
-    uploaded = files.upload()   # select adni_diagnosis_dxsum_no_cdr.csv
-except ImportError:
-    pass
+parser = argparse.ArgumentParser(
+    description='Subject-disjoint conventional ML baselines for the ADNI diagnosis task.'
+)
+parser.add_argument(
+    '--data_csv',
+    default='study_data_no_cdr.csv',
+    help='Input CSV containing the 18 source variables and DIAGNOSIS target.',
+)
+parser.add_argument(
+    '--out_dir',
+    default='results/baselines',
+    help='Directory for aggregate metrics, fold manifests, and figures.',
+)
+parser.add_argument('--seed', type=int, default=42)
+parser.add_argument('--outer_folds', type=int, default=5)
+parser.add_argument('--num_seeds', type=int, default=5)
+args = parser.parse_args()
 
+DATA_PATH = args.data_csv
+OUTPUT_DIR = Path(args.out_dir)
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-# In[3]:
-
-
-DATA_PATH  = 'adni_diagnosis_dxsum_no_cdr.csv'
-OUTPUT_DIR = Path('.')
-
-SEED          = 42
-N_OUTER_FOLDS = 5
-NUM_SEEDS     = 5
+SEED          = args.seed
+N_OUTER_FOLDS = args.outer_folds
+NUM_SEEDS     = args.num_seeds
 SEEDS         = [SEED + i for i in range(NUM_SEEDS)]
 
 # 18 source variables (clinical_/mri_/pet_ predictors, no CDR)

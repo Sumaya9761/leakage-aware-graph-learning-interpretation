@@ -985,6 +985,61 @@ def subject_stratified_split(df, target_col, group_col, val_frac=0.1, test_frac=
     return train_mask, val_mask, test_mask
 
 
+def subject_split_from_file(df, group_col, split_file):
+    """Load fixed train/validation/test assignments at subject level.
+
+    The split file may contain subjects that are absent from ``df`` (for
+    example, when a primary-cohort split is reused for a complete-case
+    sensitivity cohort), but every subject in ``df`` must be assigned exactly
+    once. Expected columns are ``subject_id`` and ``split``.
+    """
+    split_path = Path(split_file)
+    split_df = pd.read_csv(split_path)
+    required = {"subject_id", "split"}
+    missing_cols = required.difference(split_df.columns)
+    if missing_cols:
+        raise ValueError(
+            f"Split file {split_path} is missing columns: {sorted(missing_cols)}"
+        )
+
+    split_df = split_df[["subject_id", "split"]].copy()
+    split_df["subject_id"] = split_df["subject_id"].astype(str).str.strip()
+    split_df["split"] = split_df["split"].astype(str).str.strip().str.lower()
+
+    conflicting = split_df.groupby("subject_id")["split"].nunique()
+    conflicting = conflicting[conflicting > 1]
+    if not conflicting.empty:
+        raise ValueError(
+            "Subjects have conflicting split assignments: "
+            f"{conflicting.index.tolist()[:10]}"
+        )
+    split_df = split_df.drop_duplicates(subset="subject_id")
+
+    valid_splits = {"train", "val", "test"}
+    invalid = sorted(set(split_df["split"]) - valid_splits)
+    if invalid:
+        raise ValueError(f"Invalid split labels in {split_path}: {invalid}")
+
+    subject_series = df[group_col].astype(str).str.strip()
+    mapping = dict(zip(split_df["subject_id"], split_df["split"]))
+    missing_subjects = sorted(set(subject_series.unique()) - set(mapping))
+    if missing_subjects:
+        raise ValueError(
+            f"Split file {split_path} does not assign {len(missing_subjects)} "
+            f"subjects from the analysis cohort: {missing_subjects[:10]}"
+        )
+
+    assignments = subject_series.map(mapping)
+    train_mask = assignments.eq("train").to_numpy()
+    val_mask = assignments.eq("val").to_numpy()
+    test_mask = assignments.eq("test").to_numpy()
+    if not (train_mask.any() and val_mask.any() and test_mask.any()):
+        raise ValueError("Fixed split must contain nonempty train, val, and test partitions")
+    if not np.all(train_mask | val_mask | test_mask):
+        raise AssertionError("Every analysis row must belong to exactly one split")
+    return train_mask, val_mask, test_mask
+
+
 # Training
 class WarmupCosineScheduler:
     """Linear warmup followed by cosine annealing to min_lr."""
@@ -1228,7 +1283,19 @@ def plot_loss_curves(all_best_info, out_dir, title_prefix=""):
 
 
 CLASS_DISPLAY = {"0": "NC", "0.5": "MCI", "1+": "AD"}
+CLASS_EXPORT = {"0": "NC", "0.5": "MCI", "1+": "AD"}
 CLASS_COLORS = {"0": "#2196F3", "0.5": "#FF9800", "1+": "#F44336"}
+
+
+def configure_class_labels(target):
+    """Configure human-readable and CSV-safe labels for the active target."""
+    global CLASS_DISPLAY, CLASS_EXPORT
+    if target == "cdr":
+        CLASS_DISPLAY = {"0": "CDR 0", "0.5": "CDR 0.5", "1+": "CDR >=1"}
+        CLASS_EXPORT = {"0": "CDR0", "0.5": "CDR0_5", "1+": "CDR1plus"}
+    else:
+        CLASS_DISPLAY = {"0": "NC", "0.5": "MCI", "1+": "AD"}
+        CLASS_EXPORT = {"0": "NC", "0.5": "MCI", "1+": "AD"}
 
 
 def plot_roc_curves(probs, y_true, classes, out_dir):
@@ -1783,7 +1850,7 @@ def _save_ensemble_probabilities_csv(res_te, y_all, test_mask, classes, out_dir,
             "pred_class": classes[int(probs[node_i].argmax())],
         }
         for c_idx, cls in enumerate(classes):
-            row[f"prob_{CLASS_DISPLAY.get(cls, cls)}"] = float(probs[node_i, c_idx])
+            row[f"prob_{CLASS_EXPORT.get(cls, cls)}"] = float(probs[node_i, c_idx])
         if df is not None and "subject_id" in df.columns:
             row["subject_id"] = str(df.iloc[node_i]["subject_id"])
         if df is not None and "clinical_session_id" in df.columns:
@@ -4212,6 +4279,25 @@ def main():
     ap.add_argument("--out_dir", required=True, help="Output directory for results")
     ap.add_argument("--target", choices=["diagnosis", "cdr"], default="diagnosis",
                     help="'diagnosis' (default) or 'cdr' (uses clinical_CDGLOBAL instead)")
+    ap.add_argument(
+        "--split_file",
+        default=None,
+        help="Optional CSV with subject_id and split columns. Reuses fixed subject-level "
+             "train/val/test assignments instead of creating a target-specific split.",
+    )
+    ap.add_argument(
+        "--require_cdr_complete",
+        action="store_true",
+        default=False,
+        help="Restrict the analysis to rows with a recorded clinical_CDGLOBAL value.",
+    )
+    ap.add_argument(
+        "--exclude_cdr_feature",
+        action="store_true",
+        default=False,
+        help="For a diagnosis target, remove clinical_CDGLOBAL from node features after "
+             "any complete-case filtering. Used for the matched non-CDR diagnosis analysis.",
+    )
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--hidden", type=int, default=256, help="Hidden dimension for GCN + MLP layers")
     ap.add_argument("--num_gcn_layers", type=int, default=2, help="Number of GCN encoder layers")
@@ -4236,7 +4322,8 @@ def main():
                     help="Prune edges with similarity below this threshold after top-K (default: 0.1)")
     ap.add_argument("--edge_ablation", choices=list(EDGE_ABLATION_GROUPS.keys()),
                     default="cognition",
-                    help="Edge feature ablation: cognition, mri, apoe_demo, or all (default: cognition)")
+                    help="Population-edge feature set. cognition_cdr is the target-aligned "
+                         "sensitivity condition (default: cognition)")
     ap.add_argument("--max_same_subject", type=int, default=1,
                     help="Max neighbors from the same subject per node. 0=block all same-subject edges (default: 1)")
     ap.add_argument("--no_subject_constraint", action="store_true", default=False,
@@ -4311,6 +4398,11 @@ def main():
                          "unless explicitly run) - see run_single_fold_inductive().")
     args = ap.parse_args()
 
+    if args.nested_cv and args.split_file:
+        ap.error("--split_file applies to single held-out runs, not --nested_cv")
+    if args.target == "cdr" and args.exclude_cdr_feature:
+        ap.error("--exclude_cdr_feature is only applicable when --target diagnosis")
+
     # temporal branch hidden dim default
     if args.temporal_branch_hidden is None:
         args.temporal_branch_hidden = args.hidden // 2
@@ -4335,6 +4427,18 @@ def main():
     if "subject_id" not in df.columns:
         raise KeyError(f"Subject ID column not found. Available: {list(df.columns)}")
 
+    if args.require_cdr_complete:
+        if "clinical_CDGLOBAL" not in df.columns:
+            raise KeyError(
+                "--require_cdr_complete requires clinical_CDGLOBAL in the input CSV"
+            )
+        before = len(df)
+        df = df[df["clinical_CDGLOBAL"].notna()].copy()
+        print(
+            f"[cohort] CDR-complete restriction: {before} -> {len(df)} rows "
+            f"({before - len(df)} excluded)"
+        )
+
     # swap in CDR as the target, then everything below just sees DIAGNOSIS
     if args.target == "cdr":
         if "clinical_CDGLOBAL" not in df.columns:
@@ -4342,9 +4446,14 @@ def main():
         if "DIAGNOSIS" in df.columns:
             df = df.drop(columns=["DIAGNOSIS"])
         df = df.rename(columns={"clinical_CDGLOBAL": "DIAGNOSIS"})
+    elif args.exclude_cdr_feature and "clinical_CDGLOBAL" in df.columns:
+        df = df.drop(columns=["clinical_CDGLOBAL"])
+        print("[cohort] clinical_CDGLOBAL excluded from diagnosis predictors")
 
     if "DIAGNOSIS" not in df.columns:
         raise KeyError(f"DIAGNOSIS not found. Available: {list(df.columns)}")
+
+    configure_class_labels(args.target)
 
     print(f"[load] {args.single} -> {df.shape[0]} rows, {df.shape[1]} cols")
 
@@ -4433,11 +4542,17 @@ def main():
         run_nested_cv(df, y_all, edge_feat_cols, classes, c2i, args, device, out_dir)
         return
 
-    # Subject-level stratified split: 80 / 10 / 10
-    train_mask, val_mask, test_mask = subject_stratified_split(
-        df, "DIAGNOSIS", "subject_id",
-        val_frac=0.10, test_frac=0.10, seed=args.seed
-    )
+    # Subject-level split: either reuse fixed assignments or create 80/10/10.
+    if args.split_file:
+        train_mask, val_mask, test_mask = subject_split_from_file(
+            df, "subject_id", args.split_file
+        )
+        print(f"[split] Reused fixed subject assignments from {args.split_file}")
+    else:
+        train_mask, val_mask, test_mask = subject_stratified_split(
+            df, "DIAGNOSIS", "subject_id",
+            val_frac=0.10, test_frac=0.10, seed=args.seed
+        )
     print(f"[split] Train={train_mask.sum()} | Val={val_mask.sum()} | Test={test_mask.sum()}")
 
     # Branch: inductive sensitivity analysis (skips the entire transductive
@@ -4517,7 +4632,13 @@ def main():
         }, f, indent=2)
 
     with open(out_dir / "label_mapping.json", "w") as f:
-        json.dump({"classes": classes, "class_to_index": c2i}, f, indent=2)
+        json.dump({
+            "target": args.target,
+            "classes": classes,
+            "class_to_index": c2i,
+            "display_labels": {cls: CLASS_DISPLAY.get(cls, cls) for cls in classes},
+            "export_labels": {cls: CLASS_EXPORT.get(cls, cls) for cls in classes},
+        }, f, indent=2)
 
     # ---- Reproducibility exports ----
     split_labels = np.select(
@@ -4534,7 +4655,7 @@ def main():
         row = {"seed": seed, "balanced_accuracy": r["balanced_accuracy"]}
         for cls in classes:
             recall = r["classification_report"].get(str(c2i[cls]), {}).get("recall", 0.0)
-            row[f"{CLASS_DISPLAY.get(cls, cls)}_recall"] = recall
+            row[f"{CLASS_EXPORT.get(cls, cls)}_recall"] = recall
         per_seed_rows.append(row)
     pd.DataFrame(per_seed_rows).to_csv(out_dir / "per_seed_metrics.csv", index=False)
 
