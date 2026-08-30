@@ -15,6 +15,8 @@
 
   "cdr_node_and_edge_features": "python hybrid_gnn.py --single study_data_with_cdr.csv --out_dir results/cdr_node_and_edge_features --edge_ablation cognition_cdr --verbose",
 
+  "cdr_target": "python hybrid_gnn.py --single study_data_with_cdr.csv --out_dir results/cdr_target --target cdr --verbose",
+
   "baseline_models": "python baseline_comparison.py",
 
   "template_interpretation": "python bio_leaflet.py --results_dir results/main_model --data_csv study_data_no_cdr.csv --out_dir results/interpretations --verbose",
