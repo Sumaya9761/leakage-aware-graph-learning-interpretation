@@ -39,6 +39,51 @@ REQUIRED_GROUNDING_SNIPPETS = (
     "the accompanying sections summarize model attribution, graph context, longitudinal observations, counterfactual sensitivity, and uncertainty",
     "this is an automated research summary, not a clinical diagnosis",
 )
+UNCERTAINTY_WARNING = "Elevated uncertainty; interpret with caution."
+_UNCERTAINTY_WARNING_PATTERN = re.compile(
+    r"\b(?:this (?:prediction|classification) (?:has|carries|shows)\s+)?"
+    r"elevated uncertainty"
+    r"(?:\s*(?:[-\u2013\u2014,:;]\s*)?"
+    r"(?:interpret with caution|additional clinical evaluation is recommended))?"
+    r"\s*[.!]",
+    flags=re.IGNORECASE,
+)
+
+
+def _repair_uncertainty_language(text: str, is_high_uncertainty: bool) -> tuple[str, bool]:
+    """Lock elevated-uncertainty wording to the structured uncertainty flag."""
+    original = text
+    repaired = _UNCERTAINTY_WARNING_PATTERN.sub("", text)
+    repaired = re.sub(r"[ \t]{2,}", " ", repaired)
+    repaired = re.sub(r" *\n *", "\n", repaired)
+
+    if is_high_uncertainty:
+        non_diagnostic = re.search(
+            r"this is an automated research summary, not a clinical diagnosis\.",
+            repaired,
+            flags=re.IGNORECASE,
+        )
+        if non_diagnostic:
+            insert_at = non_diagnostic.end()
+            repaired = (
+                repaired[:insert_at]
+                + " "
+                + UNCERTAINTY_WARNING
+                + repaired[insert_at:]
+            )
+        else:
+            summary_header = re.search(r"SUMMARY:\s*", repaired, flags=re.IGNORECASE)
+            if summary_header:
+                insert_at = summary_header.end()
+                repaired = (
+                    repaired[:insert_at]
+                    + UNCERTAINTY_WARNING
+                    + " "
+                    + repaired[insert_at:]
+                )
+
+    repaired = re.sub(r"[ \t]{2,}", " ", repaired).strip()
+    return repaired, repaired != original
 
 
 def seed_everything(seed: int) -> None:
@@ -291,6 +336,67 @@ def _guardrail_predictions(
         verify_leaflet,
     )
 
+    def evaluate_candidate(text: str, row: pd.Series, context: dict) -> dict[str, object]:
+        stage_display = str(context["pred_class_display"])
+        headers_present = all(header in text for header in REQUIRED_HEADERS)
+        target_ok, target_issues = _validate_training_target(
+            str(row["input"]), text, pred_class=str(row["pred_class"])
+        )
+        text_lower = text.lower()
+        semantic_issues = [
+            f"MISSING_GROUNDING_STATEMENT_{index}"
+            for index, snippet in enumerate(REQUIRED_GROUNDING_SNIPPETS, start=1)
+            if snippet not in text_lower
+        ]
+        canonical_assignment = (
+            f"model output: this visit was assigned to the {stage_display.lower()} class."
+        )
+        canonical_summary = f"model output: {stage_display.lower()}."
+        if canonical_assignment not in text_lower:
+            semantic_issues.append("NONCANONICAL_STAGE_ASSIGNMENT")
+        if canonical_summary not in text_lower:
+            semantic_issues.append("NONCANONICAL_STAGE_SUMMARY")
+        has_uncertainty_warning = "elevated uncertainty" in text_lower
+        if bool(context.get("is_high_uncertainty")) != has_uncertainty_warning:
+            semantic_issues.append("UNCERTAINTY_LANGUAGE_MISMATCH")
+
+        interpretation, summary = _parse_t5_sections(text)
+        candidate = render_leaflet_with_t5(
+            context.copy(),
+            t5_stage_interpretation=interpretation,
+            t5_summary=summary,
+        )
+        report_status, report_issues, report_scores = verify_leaflet(candidate, context)
+        semantic_ok = not semantic_issues
+        accepted = bool(
+            headers_present and target_ok and semantic_ok and report_status == "PASS"
+        )
+        return {
+            "headers_present": headers_present,
+            "target_ok": bool(target_ok),
+            "target_issues": target_issues,
+            "semantic_ok": semantic_ok,
+            "semantic_issues": semantic_issues,
+            "candidate": candidate,
+            "report_status": report_status,
+            "report_issues": report_issues,
+            "report_scores": report_scores,
+            "accepted": accepted,
+        }
+
+    def issue_categories(checks: dict[str, object]) -> Counter:
+        categories = Counter()
+        issues = [
+            *checks["target_issues"],
+            *checks["semantic_issues"],
+            *checks["report_issues"],
+        ]
+        for issue in issues:
+            categories[str(issue).split(":", 1)[0]] += 1
+        if not checks["headers_present"]:
+            categories["MISSING_REQUIRED_HEADER"] += 1
+        return categories
+
     processed_predictions: list[str] = []
     audits: list[dict[str, object]] = []
     for (_, row), raw_prediction in zip(frame.iterrows(), raw_predictions):
@@ -309,41 +415,20 @@ def _guardrail_predictions(
             processed,
             flags=re.IGNORECASE,
         )
-        headers_present = all(header in processed for header in REQUIRED_HEADERS)
-        target_ok, target_issues = _validate_training_target(
-            str(row["input"]), processed, pred_class=str(row["pred_class"])
-        )
-        processed_lower = processed.lower()
-        semantic_issues = [
-            f"MISSING_GROUNDING_STATEMENT_{index}"
-            for index, snippet in enumerate(REQUIRED_GROUNDING_SNIPPETS, start=1)
-            if snippet not in processed_lower
-        ]
-        canonical_assignment = (
-            f"model output: this visit was assigned to the {stage_display.lower()} class."
-        )
-        canonical_summary = f"model output: {stage_display.lower()}."
-        if canonical_assignment not in processed_lower:
-            semantic_issues.append("NONCANONICAL_STAGE_ASSIGNMENT")
-        if canonical_summary not in processed_lower:
-            semantic_issues.append("NONCANONICAL_STAGE_SUMMARY")
-        has_uncertainty_warning = "elevated uncertainty" in processed_lower
-        if bool(context.get("is_high_uncertainty")) != has_uncertainty_warning:
-            semantic_issues.append("UNCERTAINTY_LANGUAGE_MISMATCH")
-        semantic_ok = not semantic_issues
-        interpretation, summary = _parse_t5_sections(processed)
-        candidate = render_leaflet_with_t5(
-            context.copy(),
-            t5_stage_interpretation=interpretation,
-            t5_summary=summary,
-        )
-        report_status, report_issues, report_scores = verify_leaflet(candidate, context)
-        accepted = bool(
-            headers_present and target_ok and semantic_ok and report_status == "PASS"
-        )
+        unrepaired = evaluate_candidate(processed, row, context)
+        post_repair_text = processed
+        post_repair = unrepaired
+        repair_applied = False
+        if "UNCERTAINTY_LANGUAGE_MISMATCH" in unrepaired["semantic_issues"]:
+            post_repair_text, repair_applied = _repair_uncertainty_language(
+                processed, bool(context.get("is_high_uncertainty"))
+            )
+            if repair_applied:
+                post_repair = evaluate_candidate(post_repair_text, row, context)
 
-        if accepted:
-            final_report = candidate
+        repair_success = bool(repair_applied and post_repair["accepted"])
+        if post_repair["accepted"]:
+            final_report = post_repair["candidate"]
             fell_back = False
         else:
             final_report = render_leaflet_with_t5(
@@ -354,25 +439,38 @@ def _guardrail_predictions(
             fell_back = True
         final_status, final_issues, _ = verify_leaflet(final_report, context)
 
-        categories = Counter()
-        for issue in [*target_issues, *semantic_issues, *report_issues]:
-            categories[str(issue).split(":", 1)[0]] += 1
-        if not headers_present:
-            categories["MISSING_REQUIRED_HEADER"] += 1
+        categories = issue_categories(unrepaired)
+        post_repair_categories = issue_categories(post_repair)
 
-        processed_predictions.append(processed)
+        processed_predictions.append(post_repair_text)
         audits.append(
             {
-                "headers_present": headers_present,
-                "target_guardrail_pass": bool(target_ok),
-                "semantic_guardrail_pass": semantic_ok,
-                "hybrid_report_pass": report_status == "PASS",
-                "candidate_accepted": accepted,
+                "headers_present": unrepaired["headers_present"],
+                "target_guardrail_pass": unrepaired["target_ok"],
+                "semantic_guardrail_pass": unrepaired["semantic_ok"],
+                "hybrid_report_pass": unrepaired["report_status"] == "PASS",
+                "candidate_accepted": unrepaired["accepted"],
+                "targeted_uncertainty_repair": repair_applied,
+                "targeted_uncertainty_repair_success": repair_success,
+                "post_repair_semantic_guardrail_pass": post_repair["semantic_ok"],
+                "post_repair_hybrid_report_pass": (
+                    post_repair["report_status"] == "PASS"
+                ),
+                "post_repair_candidate_pass": post_repair["accepted"],
                 "fell_back_to_template": fell_back,
                 "final_report_pass": final_status == "PASS",
-                "candidate_fields_checked": int(report_scores.get("fields_checked", 0)),
+                "candidate_fields_checked": int(
+                    unrepaired["report_scores"].get("fields_checked", 0)
+                ),
+                "post_repair_candidate_fields_checked": int(
+                    post_repair["report_scores"].get("fields_checked", 0)
+                ),
                 "issue_categories": ";".join(
                     f"{key}:{value}" for key, value in sorted(categories.items())
+                ),
+                "post_repair_issue_categories": ";".join(
+                    f"{key}:{value}"
+                    for key, value in sorted(post_repair_categories.items())
                 ),
                 "final_issue_count": len(final_issues),
             }
@@ -393,6 +491,9 @@ def summarize_oof(
         "prediction",
         "target",
         "candidate_accepted",
+        "targeted_uncertainty_repair",
+        "targeted_uncertainty_repair_success",
+        "post_repair_candidate_pass",
         "fell_back_to_template",
         "final_report_pass",
         "headers_present",
@@ -461,6 +562,12 @@ def summarize_oof(
                 "candidate_acceptance_rate": round(
                     float(group["candidate_accepted"].mean()), 4
                 ),
+                "targeted_uncertainty_repairs": int(
+                    group["targeted_uncertainty_repair"].sum()
+                ),
+                "post_repair_candidate_pass_rate": round(
+                    float(group["post_repair_candidate_pass"].mean()), 4
+                ),
             }
         )
 
@@ -496,6 +603,22 @@ def summarize_oof(
             "candidate_accepted": int(predictions["candidate_accepted"].sum()),
             "candidate_acceptance_rate": round(
                 float(predictions["candidate_accepted"].mean()), 4
+            ),
+            "candidate_status_scope": "before targeted uncertainty repair",
+            "targeted_uncertainty_repairs": int(
+                predictions["targeted_uncertainty_repair"].sum()
+            ),
+            "targeted_uncertainty_repair_rate": round(
+                float(predictions["targeted_uncertainty_repair"].mean()), 4
+            ),
+            "targeted_uncertainty_repairs_passing_reverification": int(
+                predictions["targeted_uncertainty_repair_success"].sum()
+            ),
+            "candidates_passing_after_targeted_repair": int(
+                predictions["post_repair_candidate_pass"].sum()
+            ),
+            "post_repair_candidate_pass_rate": round(
+                float(predictions["post_repair_candidate_pass"].mean()), 4
             ),
             "template_fallbacks": int(predictions["fell_back_to_template"].sum()),
             "template_fallback_rate": round(
@@ -569,7 +692,9 @@ def reverify_saved_outputs(args: argparse.Namespace) -> dict[str, object]:
         "canonical_stage_label_normalization": True,
         "required_grounding_statements_checked": len(REQUIRED_GROUNDING_SNIPPETS),
         "uncertainty_language_consistency_checked": True,
-        "failed_candidates_use_deterministic_template_fallback": True,
+        "uncertainty_language_locked_to_structured_flag": True,
+        "targeted_uncertainty_sentence_repair_precedes_full_fallback": True,
+        "unresolved_candidates_use_deterministic_template_fallback": True,
     }
     prior_path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
     print(f"Reverified {len(predictions)} saved OOF visit narratives.")
@@ -837,6 +962,14 @@ def run(args: argparse.Namespace) -> dict[str, object]:
     summary["privacy"] = {
         "aggregate_contains_participant_identifiers": False,
         "predictions_and_checkpoints_are_restricted_local_artifacts": True,
+    }
+    summary["postprocessing_and_verification"] = {
+        "canonical_stage_label_normalization": True,
+        "required_grounding_statements_checked": len(REQUIRED_GROUNDING_SNIPPETS),
+        "uncertainty_language_consistency_checked": True,
+        "uncertainty_language_locked_to_structured_flag": True,
+        "targeted_uncertainty_sentence_repair_precedes_full_fallback": True,
+        "unresolved_candidates_use_deterministic_template_fallback": True,
     }
     summary_path = out_dir / "flan_t5_oof_summary.json"
     summary_path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")

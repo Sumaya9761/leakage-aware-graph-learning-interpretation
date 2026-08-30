@@ -13,7 +13,8 @@ patient-level interpretation. ADNI data are not distributed here.
   deterministic field audit, and ROUGE evaluation
 - `ADNIT5.py`: FLAN-T5 refinement and evaluation
 - `flan_t5_oof.py`: five-fold participant-disjoint FLAN-T5 evaluation with
-  semantic verification and deterministic fallback
+  semantic verification, targeted uncertainty-language repair, and
+  deterministic full-report fallback
 - `run_bioleaflet_rag_prototype.py`: evidence-grounded follow-up evaluation
 - `publication_validation.py`: calibration, matched logistic regression, and
   participant-cluster bootstrap analysis
@@ -160,6 +161,13 @@ text, participant assignments, training corpora, and checkpoints are
 restricted local artifacts. The older `ADNIT5.py` train/evaluate commands are
 retained for exploratory use but are not the reported participant-disjoint
 publication evaluation.
+
+Candidate acceptance is recorded before repair so that raw model behavior is
+not conflated with constrained system performance. When a candidate's
+elevated-uncertainty statement disagrees with the structured uncertainty flag,
+only that recognized warning sentence is deterministically corrected and the
+entire candidate is reverified. A deterministic full-report template is used
+only if the candidate remains invalid after this targeted step.
 
 ## Publication validation analyses
 

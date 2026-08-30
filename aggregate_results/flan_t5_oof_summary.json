@@ -30,24 +30,24 @@
     },
     "postprocessed_candidate": {
       "rouge1": {
-        "mean": 0.9984,
+        "mean": 1.0,
         "participant_cluster_bootstrap_95_ci": [
-          0.9973,
-          0.9994
+          1.0,
+          1.0
         ]
       },
       "rouge2": {
-        "mean": 0.8971,
+        "mean": 0.8985,
         "participant_cluster_bootstrap_95_ci": [
-          0.896,
-          0.8981
+          0.8979,
+          0.8992
         ]
       },
       "rougeL": {
-        "mean": 0.4878,
+        "mean": 0.4886,
         "participant_cluster_bootstrap_95_ci": [
-          0.4839,
-          0.4914
+          0.4846,
+          0.4922
         ]
       }
     }
@@ -59,8 +59,14 @@
     "hybrid_candidate_report_pass": 148,
     "candidate_accepted": 131,
     "candidate_acceptance_rate": 0.8851,
-    "template_fallbacks": 17,
-    "template_fallback_rate": 0.1149,
+    "candidate_status_scope": "before targeted uncertainty repair",
+    "targeted_uncertainty_repairs": 17,
+    "targeted_uncertainty_repair_rate": 0.1149,
+    "targeted_uncertainty_repairs_passing_reverification": 17,
+    "candidates_passing_after_targeted_repair": 148,
+    "post_repair_candidate_pass_rate": 1.0,
+    "template_fallbacks": 0,
+    "template_fallback_rate": 0.0,
     "final_reports_passing_verification": 148,
     "final_report_verification_rate": 1.0,
     "candidate_rejection_reasons": {
@@ -81,7 +87,9 @@
       "postprocessed_rouge1": 1.0,
       "postprocessed_rouge2": 0.8969,
       "postprocessed_rougeL": 0.4832,
-      "candidate_acceptance_rate": 1.0
+      "candidate_acceptance_rate": 1.0,
+      "targeted_uncertainty_repairs": 0,
+      "post_repair_candidate_pass_rate": 1.0
     },
     {
       "fold": 2,
@@ -90,10 +98,12 @@
       "raw_rouge1": 0.936,
       "raw_rouge2": 0.8278,
       "raw_rougeL": 0.4693,
-      "postprocessed_rouge1": 0.9953,
-      "postprocessed_rouge2": 0.8947,
-      "postprocessed_rougeL": 0.4888,
-      "candidate_acceptance_rate": 0.6562
+      "postprocessed_rouge1": 1.0,
+      "postprocessed_rouge2": 0.899,
+      "postprocessed_rougeL": 0.4911,
+      "candidate_acceptance_rate": 0.6562,
+      "targeted_uncertainty_repairs": 11,
+      "post_repair_candidate_pass_rate": 1.0
     },
     {
       "fold": 3,
@@ -102,10 +112,12 @@
       "raw_rouge1": 0.9595,
       "raw_rouge2": 0.8527,
       "raw_rougeL": 0.4726,
-      "postprocessed_rouge1": 0.9992,
-      "postprocessed_rouge2": 0.8969,
-      "postprocessed_rougeL": 0.4853,
-      "candidate_acceptance_rate": 0.9394
+      "postprocessed_rouge1": 1.0,
+      "postprocessed_rouge2": 0.8977,
+      "postprocessed_rougeL": 0.4857,
+      "candidate_acceptance_rate": 0.9394,
+      "targeted_uncertainty_repairs": 2,
+      "post_repair_candidate_pass_rate": 1.0
     },
     {
       "fold": 4,
@@ -114,10 +126,12 @@
       "raw_rouge1": 0.9691,
       "raw_rouge2": 0.8651,
       "raw_rougeL": 0.4787,
-      "postprocessed_rouge1": 0.9984,
-      "postprocessed_rouge2": 0.8977,
-      "postprocessed_rougeL": 0.4881,
-      "candidate_acceptance_rate": 0.8824
+      "postprocessed_rouge1": 1.0,
+      "postprocessed_rouge2": 0.8992,
+      "postprocessed_rougeL": 0.4889,
+      "candidate_acceptance_rate": 0.8824,
+      "targeted_uncertainty_repairs": 4,
+      "post_repair_candidate_pass_rate": 1.0
     },
     {
       "fold": 5,
@@ -129,7 +143,9 @@
       "postprocessed_rouge1": 1.0,
       "postprocessed_rouge2": 0.8993,
       "postprocessed_rougeL": 0.4927,
-      "candidate_acceptance_rate": 1.0
+      "candidate_acceptance_rate": 1.0,
+      "targeted_uncertainty_repairs": 0,
+      "post_repair_candidate_pass_rate": 1.0
     }
   ],
   "bootstrap_replicates": 10000,
@@ -224,6 +240,8 @@
     "canonical_stage_label_normalization": true,
     "required_grounding_statements_checked": 4,
     "uncertainty_language_consistency_checked": true,
-    "failed_candidates_use_deterministic_template_fallback": true
+    "uncertainty_language_locked_to_structured_flag": true,
+    "targeted_uncertainty_sentence_repair_precedes_full_fallback": true,
+    "unresolved_candidates_use_deterministic_template_fallback": true
   }
 }
