@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 Leakage-aware hybrid GNN for NC/MCI/AD diagnosis-label classification.
 
@@ -19,7 +19,7 @@ features using an RBF kernel and subject-aware top-K sparsification.
 
 Usage:
   python hybrid_gnn.py \
-    --single adni_diagnosis_dxsum_no_cdr.csv \
+    --single study_data_*.csv \
     --out_dir results/main_model \
     --verbose
 """
@@ -98,7 +98,7 @@ EDGE_FEATURE_NAMES = [
     'mri_amygdala_vol_mean',
     'mri_inferior_temporal_vol_mean',
     'mri_middle_temporal_vol_mean',
-   
+
 ]
 
 
@@ -121,14 +121,14 @@ EDGE_ABLATION_GROUPS = {
         'clinical_LDELTOTAL',
         'clinical_TRABSCOR',
     ],
-  
-  "cognition_cdr": [
+    "cognition_cdr": [
     'clinical_MMSCORE',
     'clinical_FAQTOTAL',
     'clinical_LDELTOTAL',
     'clinical_TRABSCOR',
     'clinical_CDGLOBAL',
 ],
+
     "mri": [
         'mri_hippocampus_vol_mean',
         'mri_entorhinal_vol_mean',
@@ -139,7 +139,7 @@ EDGE_ABLATION_GROUPS = {
     "apoe_demo": [
         'clinical_APOE4_count',
         'clinical_entry_age',
-        'clinical_EDUCAT',  
+        'clinical_EDUCAT',
     ],
 }
 
@@ -148,6 +148,7 @@ EDGE_ABLATION_GROUPS = {
 # Includes genetic markers, immutable demographics, and identifiers.
 COUNTERFACTUAL_FIXED_FEATURES = frozenset({
     "clinical_APOE4_count",      # genetic — immutable
+    "PHS",                       # polygenic hazard score — genetic, immutable
     "clinical_entry_age",        # age — immutable
     "clinical_EDUCAT",           # education — fixed at baseline
     "subject_id", "merge_key", "time_key", "clinical_session_id",
@@ -4209,6 +4210,8 @@ def main():
     ap = argparse.ArgumentParser(description="Spectral GCN with cognitive edge weights")
     ap.add_argument("--single", required=True, help="Pre-merged CSV with features + DIAGNOSIS")
     ap.add_argument("--out_dir", required=True, help="Output directory for results")
+    ap.add_argument("--target", choices=["diagnosis", "cdr"], default="diagnosis",
+                    help="'diagnosis' (default) or 'cdr' (uses clinical_CDGLOBAL instead)")
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--hidden", type=int, default=256, help="Hidden dimension for GCN + MLP layers")
     ap.add_argument("--num_gcn_layers", type=int, default=2, help="Number of GCN encoder layers")
@@ -4331,6 +4334,15 @@ def main():
         df = df.rename(columns={sub_key: "subject_id"})
     if "subject_id" not in df.columns:
         raise KeyError(f"Subject ID column not found. Available: {list(df.columns)}")
+
+    # swap in CDR as the target, then everything below just sees DIAGNOSIS
+    if args.target == "cdr":
+        if "clinical_CDGLOBAL" not in df.columns:
+            raise KeyError(f"clinical_CDGLOBAL not found. Available: {list(df.columns)}")
+        if "DIAGNOSIS" in df.columns:
+            df = df.drop(columns=["DIAGNOSIS"])
+        df = df.rename(columns={"clinical_CDGLOBAL": "DIAGNOSIS"})
+
     if "DIAGNOSIS" not in df.columns:
         raise KeyError(f"DIAGNOSIS not found. Available: {list(df.columns)}")
 
@@ -4339,7 +4351,21 @@ def main():
     # Filter and encode target
     df = df[df["DIAGNOSIS"].notna()].copy()
 
-    if args.collapse_ge1:
+    if args.target == "cdr":
+        def collapse_cdr(v):
+            try:
+                f = float(v)
+            except (ValueError, TypeError):
+                return str(v)
+            if f == 0.0:
+                return "0"
+            elif f == 0.5:
+                return "0.5"
+            elif f >= 1.0:
+                return "1+"
+            return str(v)
+        df["DIAGNOSIS"] = df["DIAGNOSIS"].apply(collapse_cdr)
+    elif args.collapse_ge1:
         def collapse(v):
             try:
                 f = float(v)
