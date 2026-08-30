@@ -320,7 +320,7 @@ def make_sklearn_models(seed):
 print('Sklearn model roster:', list(make_sklearn_models(SEED).keys()))
 
 
-# ## 4  Main Training Loop (5 reconstructed outer folds × 5-seed ensemble)
+# ## 4  Main Training Loop (5 subject-disjoint outer folds × 5-seed ensemble)
 
 # In[9]:
 
