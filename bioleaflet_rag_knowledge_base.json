@@ -1,0 +1,90 @@
+[
+  {
+    "id": "ADNI-001",
+    "topic": "ADNI multimodal biomarker context",
+    "keywords": ["ADNI", "multimodal", "MRI", "PET", "CSF", "cognitive", "neuropsychological", "biomarker"],
+    "text": "ADNI follows normal aging, mild cognitive impairment, and Alzheimer's disease using clinical measures, cognitive and neuropsychological tests, MRI/PET imaging, and biofluid biomarkers. These measurements are research context and do not by themselves establish an individual diagnosis in this pipeline.",
+    "source_title": "ADNI About ADNI",
+    "source_url": "https://adni.loni.usc.edu/about/"
+  },
+  {
+    "id": "ALZ-001",
+    "topic": "diagnosis requires multiple clinical inputs",
+    "keywords": ["diagnosis", "clinical", "medical history", "neurological", "cognitive", "functional", "MRI", "PET", "CSF", "blood"],
+    "text": "Alzheimer's and related dementias are not determined by a single test. Clinical diagnosis uses medical history, neurological examination, cognitive and functional assessment, imaging, and CSF or blood biomarker information when appropriate.",
+    "source_title": "Alzheimer's Association - Medical Tests for Diagnosing Alzheimer's",
+    "source_url": "https://www.alz.org/alzheimers-dementia/diagnosis/medical_tests"
+  },
+  {
+    "id": "ALZ-002",
+    "topic": "amyloid and tau biological context",
+    "keywords": ["amyloid", "A-beta", "beta-amyloid", "tau", "p-tau", "t-tau", "CSF", "plaque", "tangle"],
+    "text": "Amyloid-beta plaques and tau-related tangles are central biological markers associated with Alzheimer's disease. In CSF or imaging studies, amyloid and tau measures provide disease-biology context, but they should be interpreted with other clinical information.",
+    "source_title": "Alzheimer's Association - Brain Tour Part 2",
+    "source_url": "https://www.alz.org/alzheimers-dementia/what-is-alzheimers/brain-tour-part-2"
+  },
+  {
+    "id": "ALZ-003",
+    "topic": "MRI structural imaging context",
+    "keywords": ["MRI", "atrophy", "brain imaging", "hippocampus", "entorhinal", "temporal", "amygdala", "middle temporal", "inferior temporal"],
+    "text": "Structural brain imaging is used in Alzheimer workups to evaluate brain structure and to help rule out alternative causes of cognitive symptoms. In research models, medial temporal measures such as hippocampal and entorhinal volumes are commonly treated as neurodegeneration-related context.",
+    "source_title": "Alzheimer's Association - Medical Tests for Diagnosing Alzheimer's",
+    "source_url": "https://www.alz.org/alzheimers-dementia/diagnosis/medical_tests"
+  },
+  {
+    "id": "ALZ-004",
+    "topic": "cognitive and functional assessment context",
+    "keywords": ["MMSE", "FAQ", "functional", "cognitive", "memory", "executive", "attention", "language", "daily living"],
+    "text": "Cognitive and functional assessments summarize memory, thinking, problem solving, behavior, and everyday function. Scores such as MMSE or FAQ are screening and assessment signals, not stand-alone diagnoses.",
+    "source_title": "Alzheimer's Association - Medical Tests for Diagnosing Alzheimer's",
+    "source_url": "https://www.alz.org/alzheimers-dementia/diagnosis/medical_tests"
+  },
+  {
+    "id": "ALZ-005",
+    "topic": "MCI heterogeneity and progression",
+    "keywords": ["MCI", "mild cognitive impairment", "intermediate", "stable", "progression", "dementia", "conversion", "ambiguous"],
+    "text": "Mild cognitive impairment can arise for multiple reasons. Some individuals progress to dementia, while others remain stable or revert to normal cognition, which makes MCI a heterogeneous and difficult class for automated classification.",
+    "source_title": "Alzheimer's Association - Mild Cognitive Impairment",
+    "source_url": "https://www.alz.org/alzheimers-dementia/what-is-dementia/related_conditions/mild-cognitive-impairment"
+  },
+  {
+    "id": "ALZ-006",
+    "topic": "APOE4 genetic risk context",
+    "keywords": ["APOE", "APOE4", "genetic", "risk", "family history"],
+    "text": "APOE-e4 is a risk gene associated with higher Alzheimer's risk, but carrying it does not determine whether a person has or will develop Alzheimer's disease. In this pipeline it is treated only as a model feature.",
+    "source_title": "Alzheimer's Association - Medical Tests for Diagnosing Alzheimer's",
+    "source_url": "https://www.alz.org/alzheimers-dementia/diagnosis/medical_tests"
+  },
+  {
+    "id": "XAI-001",
+    "topic": "population graph and neighbor explanation",
+    "keywords": ["graph", "neighbor", "neighbour", "population graph", "edge", "similarity", "GCN", "GNN", "neighborhood", "agreement"],
+    "text": "A population graph represents each patient or visit as a node and connects similar records with edges. Graph-based explanations can summarize how neighboring nodes and edge context contribute to the model output, but this is model-derived evidence rather than independent clinical evidence.",
+    "source_title": "Frontiers in Artificial Intelligence GCN explanation paper",
+    "source_url": "https://www.frontiersin.org/journals/artificial-intelligence/articles/10.3389/frai.2023.1334613/full"
+  },
+  {
+    "id": "XAI-002",
+    "topic": "feature attribution explanation",
+    "keywords": ["feature importance", "attribution", "GNNExplainer", "explanation", "biomarker salience", "top feature"],
+    "text": "Feature attribution highlights model-sensitive input variables for an individual prediction. It explains the fitted model's local behavior and should not be read as a causal or diagnostic statement about the patient.",
+    "source_title": "Frontiers in Artificial Intelligence GCN explanation paper",
+    "source_url": "https://www.frontiersin.org/journals/artificial-intelligence/articles/10.3389/frai.2023.1334613/full"
+  },
+  {
+    "id": "XAI-003",
+    "topic": "uncertainty and probability caution",
+    "keywords": ["uncertainty", "entropy", "confidence", "probability", "aleatoric", "epistemic"],
+    "text": "Predictive confidence and entropy describe the model's probability distribution. Higher entropy means the model is less concentrated on one class, so the explanation should be read more cautiously.",
+    "source_title": "BioLeaflet model output definition",
+    "source_url": "local:results_bioleaflets/diagnosis_all_explainer/field_accuracy_summary.csv"
+  },
+  {
+    "id": "XAI-004",
+    "topic": "counterfactual what-if explanation",
+    "keywords": ["counterfactual", "what-if", "change", "standard deviation", "prediction toward", "decision boundary"],
+    "text": "A counterfactual what-if statement describes feature changes that would move the trained model toward another class. It is a sensitivity analysis of the model, not a treatment recommendation and not advice to change a clinical measurement.",
+    "source_title": "BioLeaflet counterfactual output definition",
+    "source_url": "local:results_bioleaflets/diagnosis_all_explainer/bioleaflets.csv"
+  }
+]
