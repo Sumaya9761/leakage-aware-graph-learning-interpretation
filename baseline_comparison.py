@@ -21,6 +21,7 @@ from sklearn.neural_network import MLPClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
+from sklearn.model_selection import StratifiedGroupKFold
 from sklearn.metrics import (balanced_accuracy_score, roc_auc_score,
                               f1_score, recall_score, confusion_matrix)
 
@@ -46,30 +47,29 @@ import seaborn as sns
 print('All imports OK')
 
 
-# In[3]:
+# In[2]:
 
 
 try:
     from google.colab import files
-    uploaded = files.upload()   # select adni_diagnosis_dxsum_no_cdr.csv and gnn_outer_folds.json
+    uploaded = files.upload()   # select adni_diagnosis_dxsum_no_cdr.csv
 except ImportError:
-    pass  # not running in Colab — files are read from the local working directory
+    pass
 
 
-# In[4]:
+# In[3]:
 
 
 DATA_PATH  = 'adni_diagnosis_dxsum_no_cdr.csv'
-FOLD_PATH  = 'gnn_outer_folds.json'   # produced by export_gnn_folds.py (reconstructed GNN outer folds)
 OUTPUT_DIR = Path('.')
 
-SEED          = 42     # matches GNN --seed 42 (also nested_cv_results.json args.seed)
-N_OUTER_FOLDS = 5       # matches GNN --outer_folds 5
-NUM_SEEDS     = 5       # matches GNN --num_seeds 5 (multi-seed ensemble)
-SEEDS         = [SEED + i for i in range(NUM_SEEDS)]   # [42, 43, 44, 45, 46] — same as GNN's `seeds`
+SEED          = 42
+N_OUTER_FOLDS = 5
+NUM_SEEDS     = 5
+SEEDS         = [SEED + i for i in range(NUM_SEEDS)]
 
-# 18 source variables (paper8_updated.py's clinical_/mri_/pet_ predictors, no CDR)
-# + visit_month + visit_age = 20 predictors, per the reuse spec.
+# 18 source variables (clinical_/mri_/pet_ predictors, no CDR)
+# + visit_month + visit_age = 20 predictors
 SOURCE_VARS = [
     'clinical_entry_age', 'clinical_GENDER', 'clinical_EDUCAT',
     'clinical_APOE4_count', 'clinical_MMSCORE', 'clinical_FAQTOTAL',
@@ -90,14 +90,13 @@ CLASS_NAMES = ['NC', 'MCI', 'AD']
 print(f'Seeds:       {SEEDS}')
 print(f'Outer folds: {N_OUTER_FOLDS}')
 print(f'Data:        {DATA_PATH}')
-print(f'Fold file:   {FOLD_PATH}')
 print(f'Predictors:  {len(SOURCE_VARS)} source + {len(DERIVED_VARS)} derived = '
       f'{len(SOURCE_VARS) + len(DERIVED_VARS)}')
 
 
 # ## 1  Data Loading & Preprocessing
 
-# In[5]:
+# In[4]:
 
 
 df_raw = pd.read_csv(DATA_PATH)
@@ -113,7 +112,6 @@ df = df_raw.copy()
 
 
 def parse_visit_month(s):
-    """Matches paper8_updated.py's parse_visit_month (lines 89-103)."""
     if pd.isna(s):
         return np.nan
     s = str(s).strip().lower()
@@ -145,9 +143,7 @@ print(f'\nClass distribution (0=NC 1=MCI 2=AD):')
 print(df[TARGET_COL].value_counts().sort_index().rename({0:'NC',1:'MCI',2:'AD'}))
 
 
-# Exactly the 20 predictors specified: 18 source variables + visit_month + visit_age.
-# No sparse-column dropping here — the reuse spec fixes the predictor set explicitly
-# rather than deriving it from a missingness threshold.
+# 20 predictors: 18 source variables + visit_month + visit_age. Fixed set, no missingness-based dropping.
 feature_cols = [c for c in SOURCE_VARS + DERIVED_VARS if c in df.columns]
 missing_requested = [c for c in SOURCE_VARS + DERIVED_VARS if c not in df.columns]
 if missing_requested:
@@ -159,45 +155,30 @@ for c in feature_cols:
     print(f'  {c:<40} dtype={df[c].dtype}  NaN={pct_nan:.1f}%')
 
 
-# In[6]:
+# In[5]:
 
 
-with open(FOLD_PATH) as f:
-    fold_info = json.load(f)
+# Same split as hybrid_gnn.py's run_nested_cv(): StratifiedGroupKFold(5, shuffle=True, seed=42)
+# on subject_id groups. Reusing df[TARGET_COL] (already 0/1/2) since it's the same encoding.
+subject_ids = df['subject_id'].values
+y_for_split = df[TARGET_COL].values
+dummy_X = np.zeros(len(y_for_split))
 
-assert fold_info['seed'] == SEED, \
-    f"fold file seed={fold_info['seed']} != notebook SEED={SEED}"
-assert fold_info['outer_folds'] == N_OUTER_FOLDS, \
-    f"fold file outer_folds={fold_info['outer_folds']} != N_OUTER_FOLDS={N_OUTER_FOLDS}"
+outer_cv = StratifiedGroupKFold(n_splits=N_OUTER_FOLDS, shuffle=True, random_state=SEED)
 
-FOLDS_VERIFIED = bool(fold_info.get('verified_against_nested_cv_results', False))
-print(f"[fold status] {fold_info.get('label', 'unlabeled')}")
-if not FOLDS_VERIFIED:
-    print(f"[fold status] reason: {fold_info.get('verification_reason')}")
-    mismatches = fold_info.get('verification_mismatches')
-    if mismatches:
-        for m in mismatches:
-            print(f"  fold {m['fold']}: expected(nested_cv_results)={m['expected']}  "
-                  f"reconstructed={m['reconstructed']}")
-    print('These folds are RECONSTRUCTED, not confirmed identical to the historical GNN run. '
-          'Proceeding, but do not report them as the exact historical GNN folds.')
-else:
-    print('These reconstructed folds are verified identical to the historical GNN run '
-          '(exact per-fold class-support match against nested_cv_results.json).')
+df['outer_fold'] = -1
+for outer_i, (_, test_idx) in enumerate(outer_cv.split(dummy_X, y=y_for_split, groups=subject_ids)):
+    df.iloc[test_idx, df.columns.get_loc('outer_fold')] = outer_i
 
-subject_to_fold = {str(k): v for k, v in fold_info['subject_to_fold'].items()}
-df['outer_fold'] = df['subject_id'].astype(str).map(subject_to_fold)
-
-missing = df['outer_fold'].isna()
-if missing.any():
-    raise ValueError(f'{missing.sum()} rows have subjects absent from gnn_outer_folds.json '
-                      '— dataset does not match the one export_gnn_folds.py was run on.')
+assert (df['outer_fold'] >= 0).all(), 'Some rows were not assigned to an outer fold!'
 df['outer_fold'] = df['outer_fold'].astype(int)
+print(f'Generated {N_OUTER_FOLDS} outer folds via StratifiedGroupKFold(n_splits={N_OUTER_FOLDS}, '
+      f'shuffle=True, random_state={SEED}), same as hybrid_gnn.py run_nested_cv().')
 
 print('\nRows per outer fold (test-set size when that fold is held out):')
 print(df['outer_fold'].value_counts().sort_index())
 
-# ── Validation: pairwise subject disjointness, nonempty partitions, all 3 classes present ──
+# Pairwise subject disjointness, nonempty partitions, all 3 classes present
 fold_subjects = {i: set(df.loc[df['outer_fold'] == i, 'subject_id']) for i in range(N_OUTER_FOLDS)}
 for i in range(N_OUTER_FOLDS):
     for j in range(i + 1, N_OUTER_FOLDS):
@@ -232,17 +213,26 @@ fold_counts_df.to_csv(fold_counts_path, index=False)
 print(f'\nFold-specific session/subject counts (saved to {fold_counts_path}):')
 print(fold_counts_df.to_string(index=False))
 
+# Subject IDs per fold, for verification
+fold_subject_ids = {
+    str(i): sorted(df.loc[df['outer_fold'] == i, 'subject_id'].astype(str).unique().tolist())
+    for i in range(N_OUTER_FOLDS)
+}
+fold_subjects_path = OUTPUT_DIR / 'baseline_outer_fold_subjects.json'
+with open(fold_subjects_path, 'w') as f:
+    json.dump({
+        'seed': SEED,
+        'outer_folds': N_OUTER_FOLDS,
+        'shuffle': True,
+        'fold_to_subject_ids': fold_subject_ids,
+    }, f, indent=2)
+print(f'Saved per-fold subject IDs to {fold_subjects_path} for verification.')
 
-# In[7]:
+
+# In[6]:
 
 
 def build_preprocessor(df, train_mask, cols, scale=True):
-    """
-    Fits median imputer (+optional StandardScaler) on TRAIN rows only.
-    Mirrors GNN preprocessing (paper8_updated.py lines 1022-1029).
-    scale=True  → for LR, SVM, MLP
-    scale=False → for tree-based models (RF, XGBoost, etc.)
-    """
     steps = [('imputer', SimpleImputer(strategy='median'))]
     if scale:
         steps.append(('scaler', StandardScaler()))
@@ -251,13 +241,10 @@ def build_preprocessor(df, train_mask, cols, scale=True):
     return pipe
 
 
-# In[8]:
+# In[7]:
 
 
 def compute_metrics(y_true, y_pred, y_proba):
-    """
-    Returns the same metrics reported by the GNN evaluation.
-    """
     m = {}
     m['balanced_accuracy'] = balanced_accuracy_score(y_true, y_pred)
     m['macro_f1']          = f1_score(y_true, y_pred, average='macro', zero_division=0)
@@ -278,14 +265,12 @@ def compute_metrics(y_true, y_pred, y_proba):
     return m
 
 
-# In[9]:
+# In[8]:
 
 
 TREE_MODELS = {'Random Forest', 'Extra Trees', 'XGBoost', 'LightGBM'}
 
-
 def make_sklearn_models(seed):
-    """Returns fresh model instances for a given seed."""
     models = {
         'Logistic Regression': LogisticRegression(
             C=1.0, class_weight='balanced', max_iter=5000,
@@ -337,7 +322,7 @@ print('Sklearn model roster:', list(make_sklearn_models(SEED).keys()))
 
 # ## 4  Main Training Loop (5 reconstructed outer folds × 5-seed ensemble)
 
-# In[10]:
+# In[9]:
 
 
 all_results   = []
@@ -404,14 +389,13 @@ results_df = pd.DataFrame(all_results)
 
 # ## 5  Results Aggregation (across the 5 outer folds)
 
-# In[11]:
+# In[10]:
 
 
 METRIC_COLS = ['balanced_accuracy', 'macro_auc', 'macro_f1',
                'nc_recall', 'mci_recall', 'ad_recall']
 
 def compute_ci(values, confidence=0.95):
-    """95% CI using t-distribution (appropriate for n=5 outer folds)."""
     n   = len(values)
     se  = stats.sem(values)
     t   = stats.t.ppf((1 + confidence) / 2, df=n - 1)
@@ -443,7 +427,7 @@ display_cols = ['model'] + [f'{m}_mean' for m in METRIC_COLS] + [f'{m}_std' for 
 print(summary_df[display_cols].to_string(index=False, float_format=lambda x: f'{x:.4f}'))
 
 
-# In[12]:
+# In[11]:
 
 
 # Compact table: mean ± std for each metric
@@ -458,7 +442,7 @@ print('\nCompact table (mean ± std)\n')
 print(compact.to_string(index=False))
 
 
-# In[13]:
+# In[12]:
 
 
 fig, ax = plt.subplots(figsize=(12, 5))
@@ -490,7 +474,7 @@ plt.show()
 print('Saved: baseline_balanced_accuracy.png')
 
 
-# In[14]:
+# In[13]:
 
 
 recall_cols = {'NC': 'nc_recall_mean', 'MCI': 'mci_recall_mean', 'AD': 'ad_recall_mean'}
@@ -521,7 +505,7 @@ plt.show()
 print('Saved: baseline_per_class_recall.png')
 
 
-# In[15]:
+# In[14]:
 
 
 model_list = list(conf_matrices.keys())
@@ -558,7 +542,7 @@ plt.show()
 print('Saved: baseline_confusion_matrices.png')
 
 
-# In[16]:
+# In[15]:
 
 
 # Per-fold results
