@@ -5,8 +5,8 @@
     "clean_outputs": 148,
     "clean_passed": 148,
     "specificity": 1.0,
-    "corrupted_outputs": 1875,
-    "corruptions_detected": 1875,
+    "corrupted_outputs": 1871,
+    "corruptions_detected": 1871,
     "sensitivity": 1.0,
     "by_challenge": {
       "contradictory_age": {
@@ -35,8 +35,8 @@
         "detection_rate": 1.0
       },
       "stage_mismatch": {
-        "n": 99,
-        "detected": 99,
+        "n": 95,
+        "detected": 95,
         "detection_rate": 1.0
       },
       "wrong_age": {
@@ -77,16 +77,16 @@
     }
   },
   "rag_verifier": {
-    "clean_outputs": 783,
-    "clean_passed": 783,
+    "clean_outputs": 784,
+    "clean_passed": 784,
     "specificity": 1.0,
-    "corrupted_outputs": 8909,
-    "corruptions_detected": 8909,
+    "corrupted_outputs": 8920,
+    "corruptions_detected": 8920,
     "sensitivity": 1.0,
     "by_challenge": {
       "contradictory_confidence": {
-        "n": 783,
-        "detected": 783,
+        "n": 784,
+        "detected": 784,
         "detection_rate": 1.0
       },
       "contradictory_graph_agreement": {
@@ -95,38 +95,38 @@
         "detection_rate": 1.0
       },
       "contradictory_prediction": {
-        "n": 783,
-        "detected": 783,
+        "n": 784,
+        "detected": 784,
         "detection_rate": 1.0
       },
       "contradictory_true_label": {
-        "n": 783,
-        "detected": 783,
+        "n": 784,
+        "detected": 784,
         "detection_rate": 1.0
       },
       "invalid_citation": {
-        "n": 783,
-        "detected": 783,
+        "n": 784,
+        "detected": 784,
         "detection_rate": 1.0
       },
       "missing_citations": {
-        "n": 783,
-        "detected": 783,
+        "n": 784,
+        "detected": 784,
         "detection_rate": 1.0
       },
       "missing_non_diagnostic_label": {
-        "n": 783,
-        "detected": 783,
+        "n": 784,
+        "detected": 784,
         "detection_rate": 1.0
       },
       "restricted_clinical_language": {
-        "n": 783,
-        "detected": 783,
+        "n": 784,
+        "detected": 784,
         "detection_rate": 1.0
       },
       "unsupported_uncited_sentence": {
-        "n": 783,
-        "detected": 783,
+        "n": 784,
+        "detected": 784,
         "detection_rate": 1.0
       },
       "wrong_graph_agreement": {
@@ -135,18 +135,18 @@
         "detection_rate": 1.0
       },
       "wrong_patient_id": {
-        "n": 783,
-        "detected": 783,
+        "n": 784,
+        "detected": 784,
         "detection_rate": 1.0
       },
       "wrong_prediction": {
-        "n": 783,
-        "detected": 783,
+        "n": 784,
+        "detected": 784,
         "detection_rate": 1.0
       },
       "wrong_true_label": {
-        "n": 783,
-        "detected": 783,
+        "n": 784,
+        "detected": 784,
         "detection_rate": 1.0
       }
     }

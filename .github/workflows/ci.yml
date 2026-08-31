@@ -1,0 +1,35 @@
+name: Reproducibility checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install pinned dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Run data-free unit tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Run synthetic end-to-end pipeline
+        env:
+          MPLBACKEND: Agg
+          CUDA_VISIBLE_DEVICES: ""
+          OMP_NUM_THREADS: "1"
+        run: python synthetic_smoke_test.py

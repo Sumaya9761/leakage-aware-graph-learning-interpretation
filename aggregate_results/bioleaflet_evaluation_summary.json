@@ -2,11 +2,11 @@
   "evaluation_layer": "corrected deterministic visit-level BioLeaflet template",
   "rouge_scope": "template-to-reference overlap from this deterministic audit; not the held-out FLAN-T5 narrative evaluation reported separately",
   "n_leaflets": 148,
-  "n_checked_fields": 2108,
+  "n_checked_fields": 2109,
   "field_accuracy": 1.0,
   "pass_rate": 1.0,
   "fact_prf": {
-    "true_positive": 2108,
+    "true_positive": 2109,
     "false_positive": 0,
     "false_negative": 0,
     "precision": 1.0,
@@ -19,22 +19,22 @@
   },
   "rouge": {
     "interpretation": {
-      "rouge1_f1": 0.7335123270153838,
-      "rouge2_f1": 0.5747244385682312,
-      "rougeL_f1": 0.7030565929599991,
-      "rougeLsum_f1": 0.7030565929599991
+      "rouge1_f1": 0.7327032648752845,
+      "rouge2_f1": 0.573416864517901,
+      "rougeL_f1": 0.702155066575317,
+      "rougeLsum_f1": 0.702155066575317
     },
     "interpretation_summary": {
-      "rouge1_f1": 0.6387212590868837,
-      "rouge2_f1": 0.46552421430221647,
-      "rougeL_f1": 0.5981976190547482,
-      "rougeLsum_f1": 0.5981976190547482
+      "rouge1_f1": 0.638129608873267,
+      "rouge2_f1": 0.46452894194851685,
+      "rougeL_f1": 0.5978011726104041,
+      "rougeLsum_f1": 0.5978011726104041
     },
     "summary": {
-      "rouge1_f1": 0.30888938291993523,
-      "rouge2_f1": 0.10859950859950858,
-      "rougeL_f1": 0.2468320259154572,
-      "rougeLsum_f1": 0.2468320259154572
+      "rouge1_f1": 0.3097468796646235,
+      "rouge2_f1": 0.1089154089154089,
+      "rougeL_f1": 0.2481341506018357,
+      "rougeLsum_f1": 0.2481341506018357
     }
   }
 }

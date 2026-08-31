@@ -247,8 +247,8 @@ def apply_temporal_decay_causal(similarity, visit_months, subject_ids, temporal_
     For same-subject pairs, an edge is zeroed if node j's visit comes after
     node i's — a node must not see its own future visit — otherwise it decays
     by exp(-temporal_lambda * (t_i - t_j)). Cross-subject edges stay at
-    weight 1.0, same as apply_temporal_decay, which is left unchanged since
-    the transductive path still uses it directly.
+    weight 1.0. The transductive path applies the equivalent causal constraint
+    after population-graph sparsification.
     """
     vm = np.asarray(visit_months, dtype=np.float64)
     delta_t = vm[:, None] - vm[None, :]  # t_i - t_j
@@ -372,8 +372,28 @@ def print_subject_neighbor_stats(A, subject_ids, prefix="[subject]"):
     print(f"  {prefix} Dominated nodes (>50% same-subj): {dominated}/{N}")
 
 
-def build_temporal_adjacency(visit_months, subject_ids, temporal_lambda=0.05, topk=None):
-    """Build adjacency with only same-subject edges, weighted by temporal proximity."""
+def build_temporal_adjacency(visit_months, subject_ids, temporal_lambda=0.05,
+                             topk=None, direction="causal"):
+    """Build the same-subject temporal graph.
+
+    In causal mode, row ``i`` can aggregate only from visits ``j`` at or
+    before visit ``i``. Bidirectional mode is retained only to reproduce the
+    archived configuration.
+    """
+    if direction == "causal":
+        A_temporal = build_temporal_adjacency_causal(
+            visit_months,
+            subject_ids,
+            temporal_lambda=temporal_lambda,
+            topk=topk,
+        )
+        A_hat = A_temporal + np.eye(len(visit_months))
+        return A_temporal, symmetric_normalize(A_hat)
+    if direction != "bidirectional":
+        raise ValueError(
+            f"Unknown temporal direction '{direction}'; expected causal or bidirectional"
+        )
+
     N = len(visit_months)
     vm = np.asarray(visit_months, dtype=np.float64)
     sids = np.asarray(subject_ids)
@@ -403,12 +423,74 @@ def build_temporal_adjacency(visit_months, subject_ids, temporal_lambda=0.05, to
     return A_temporal, A_temporal_norm
 
 
-def drop_edge(A_norm_tensor, drop_rate=0.1):
-    """DropEdge: randomly zero out edges during training to reduce over-smoothing."""
+def enforce_causal_same_subject_edges(adjacency, visit_months, subject_ids):
+    """Remove population-graph edges that expose a visit to its own future.
+
+    Cross-subject edges are untouched. Equal-time same-subject edges are
+    allowed because neither visit is later than the other.
+    """
+    A = np.asarray(adjacency).copy()
+    vm = np.asarray(visit_months, dtype=np.float64)
+    sids = np.asarray(subject_ids)
+    same_subject = sids[:, None] == sids[None, :]
+    source_is_future = vm[None, :] > vm[:, None]
+    future_edges = same_subject & source_is_future & (A != 0)
+    removed = int(future_edges.sum())
+    A[future_edges] = 0.0
+    np.fill_diagonal(A, 0.0)
+    return A, {"future_edges_removed": removed}
+
+
+def normalize_adjacency_tensor(A_raw_tensor):
+    """Add self-loops and apply D^-1/2 A D^-1/2 in torch."""
+    A_raw_tensor = torch.as_tensor(A_raw_tensor)
+    A_no_diag = A_raw_tensor.clone()
+    A_no_diag.fill_diagonal_(0.0)
+    A_hat = A_no_diag + torch.eye(
+        A_no_diag.shape[0], dtype=A_no_diag.dtype, device=A_no_diag.device
+    )
+    degree = A_hat.sum(dim=1)
+    inv_sqrt = torch.where(
+        degree > 0,
+        torch.rsqrt(degree),
+        torch.zeros_like(degree),
+    )
+    return inv_sqrt[:, None] * A_hat * inv_sqrt[None, :]
+
+
+def drop_edge(A_raw_tensor, drop_rate=0.1):
+    """Drop raw edges, preserve paired edges, then renormalize the graph.
+
+    Undirected edge pairs share one Bernoulli draw. One-way edges, including
+    causal temporal edges embedded in the population graph, are sampled
+    independently and are never mirrored. Self-loops are added after edge
+    sampling and therefore cannot be dropped.
+    """
+    if not 0.0 <= drop_rate <= 1.0:
+        raise ValueError("drop_rate must be between 0 and 1")
+
+    raw = torch.as_tensor(A_raw_tensor).clone()
+    raw.fill_diagonal_(0.0)
+    present = raw != 0
+    paired = present & present.T
+    directed = present & ~paired
+
+    upper_pairs = torch.triu(paired, diagonal=1)
+    pair_draws = torch.rand_like(raw) > drop_rate
+    kept_upper_pairs = upper_pairs & pair_draws
+    kept_pairs = kept_upper_pairs | kept_upper_pairs.T
+
+    directed_draws = torch.rand_like(raw) > drop_rate
+    kept_directed = directed & directed_draws
+    kept_raw = raw * (kept_pairs | kept_directed).to(raw.dtype)
+    return normalize_adjacency_tensor(kept_raw)
+
+
+def drop_edge_legacy(A_norm_tensor, drop_rate=0.1):
+    """Archived DropEdge behavior for exact reproduction of prior runs."""
     if drop_rate <= 0:
         return A_norm_tensor
     mask = torch.rand_like(A_norm_tensor) > drop_rate
-    # Keep diagonal (self-loops) intact
     diag = torch.diag(torch.diag(A_norm_tensor))
     off_diag = A_norm_tensor - diag
     return diag + off_diag * mask.float()
@@ -427,9 +509,9 @@ def symmetric_normalize(A_hat):
 # Everything below builds strictly-directed graphs where held-out (val/test)
 # nodes may receive edges from training nodes but never emit them, so
 # training-node neighborhoods are unaffected by which held-out nodes are
-# present. Used only by run_single_fold_inductive(); the transductive path
-# above (compute_similarity_matrix, topk_sparsify*, symmetric_normalize,
-# build_temporal_adjacency) is untouched.
+# present. These helpers are used only by run_single_fold_inductive(); shared
+# graph construction and normalization utilities above are also used by the
+# primary transductive path.
 
 def row_normalize(A_hat):
     """Compute D^{-1} A_hat (row-stochastic normalization). Unused — kept as
@@ -793,6 +875,77 @@ class GCNLayer(nn.Module):
         return torch.mm(A_norm, support)
 
 
+class SplitSafeBatchNorm1d(nn.BatchNorm1d):
+    """BatchNorm whose training statistics can be restricted to a node mask."""
+
+    def forward(self, input, stats_mask=None):
+        if not self.training or stats_mask is None:
+            return super().forward(input)
+
+        mask = torch.as_tensor(stats_mask, dtype=torch.bool, device=input.device)
+        if mask.ndim != 1 or mask.shape[0] != input.shape[0]:
+            raise ValueError("BatchNorm statistics mask must select input rows")
+        selected = input[mask]
+        if selected.shape[0] < 2:
+            raise ValueError("Split-safe BatchNorm needs at least two training rows")
+
+        mean = selected.mean(dim=0)
+        variance = selected.var(dim=0, unbiased=False)
+
+        if self.track_running_stats:
+            with torch.no_grad():
+                self.num_batches_tracked.add_(1)
+                if self.momentum is None:
+                    momentum = 1.0 / float(self.num_batches_tracked.item())
+                else:
+                    momentum = self.momentum
+                unbiased_variance = variance * (
+                    selected.shape[0] / (selected.shape[0] - 1)
+                )
+                self.running_mean.mul_(1.0 - momentum).add_(momentum * mean)
+                self.running_var.mul_(1.0 - momentum).add_(
+                    momentum * unbiased_variance
+                )
+
+        output = (input - mean) * torch.rsqrt(variance + self.eps)
+        if self.affine:
+            output = output * self.weight + self.bias
+        return output
+
+
+class MaskAwareSequential(nn.Sequential):
+    """Sequential container that forwards a node mask to split-safe BN."""
+
+    def forward(self, input, normalization_mask=None):
+        for module in self:
+            if isinstance(module, SplitSafeBatchNorm1d):
+                input = module(input, stats_mask=normalization_mask)
+            else:
+                input = module(input)
+        return input
+
+
+def apply_normalization(module, values, normalization_mask=None):
+    if isinstance(module, SplitSafeBatchNorm1d):
+        return module(values, stats_mask=normalization_mask)
+    return module(values)
+
+
+def make_normalization(dim, normalization):
+    """Construct a node-wise normalization layer for the selected protocol."""
+    if normalization == "masked_batch":
+        return SplitSafeBatchNorm1d(dim)
+    if normalization == "batch":
+        return nn.BatchNorm1d(dim)
+    if normalization == "layer":
+        return nn.LayerNorm(dim)
+    if normalization == "none":
+        return nn.Identity()
+    raise ValueError(
+        f"Unknown normalization '{normalization}'; expected masked_batch, batch, layer, or none"
+    )
+
+
 class SpectralGCN(nn.Module):
     """Hybrid GCN + MLP model for AD classification.
 
@@ -806,18 +959,33 @@ class SpectralGCN(nn.Module):
 
     """
     def __init__(self, in_dim, hidden_dim, num_classes, num_gcn_layers=3,
-                 dropout=0.15, use_bn=True, drop_edge_rate=0.1,
+                 dropout=0.15, use_bn=None, drop_edge_rate=0.1,
                  feat_mask_rate=0.05,
                  use_temporal_branch=False, temporal_hidden_dim=128,
                  temporal_num_layers=2, use_mlp_branch=True,
-                 use_jk=True):
+                 use_jk=True, normalization=None,
+                 dropedge_mode="renormalized"):
         super().__init__()
+        if normalization is None:
+            normalization = (
+                "masked_batch" if use_bn is None else ("batch" if use_bn else "none")
+            )
+        if normalization not in {"masked_batch", "batch", "layer", "none"}:
+            raise ValueError(
+                "normalization must be masked_batch, batch, layer, or none"
+            )
+        if dropedge_mode not in {"renormalized", "legacy"}:
+            raise ValueError("dropedge_mode must be renormalized or legacy")
+
         self.gcn_convs = nn.ModuleList()
-        self.gcn_bns = nn.ModuleList() if use_bn else None
-        self.use_bn = use_bn
+        self.gcn_bns = nn.ModuleList() if normalization != "none" else None
+        self.normalization = normalization
+        self.use_norm = normalization != "none"
+        self.use_bn = normalization in {"masked_batch", "batch"}
         self.dropout = nn.Dropout(dropout)
         self.num_gcn_layers = num_gcn_layers
         self.drop_edge_rate = drop_edge_rate
+        self.dropedge_mode = dropedge_mode
         self.feat_mask_rate = feat_mask_rate
         self.use_temporal_branch = use_temporal_branch
         self.use_mlp_branch = use_mlp_branch
@@ -828,13 +996,13 @@ class SpectralGCN(nn.Module):
 
         # GCN encoder layers (all output hidden_dim)
         self.gcn_convs.append(GCNLayer(in_dim, hidden_dim))
-        if use_bn:
-            self.gcn_bns.append(nn.BatchNorm1d(hidden_dim))
+        if self.use_norm:
+            self.gcn_bns.append(make_normalization(hidden_dim, normalization))
 
         for _ in range(num_gcn_layers - 1):
             self.gcn_convs.append(GCNLayer(hidden_dim, hidden_dim))
-            if use_bn:
-                self.gcn_bns.append(nn.BatchNorm1d(hidden_dim))
+            if self.use_norm:
+                self.gcn_bns.append(make_normalization(hidden_dim, normalization))
 
         # JK aggregation: concat all layer outputs -> hidden_dim * num_layers (or hidden_dim when disabled)
         jk_dim = hidden_dim * num_gcn_layers if use_jk else hidden_dim
@@ -847,32 +1015,36 @@ class SpectralGCN(nn.Module):
 
         if use_temporal_branch:
             self.temporal_gcn_convs = nn.ModuleList()
-            self.temporal_gcn_bns = nn.ModuleList() if use_bn else None
+            self.temporal_gcn_bns = nn.ModuleList() if self.use_norm else None
             self.temporal_input_proj = (nn.Linear(in_dim, temporal_hidden_dim)
                                         if in_dim != temporal_hidden_dim else nn.Identity())
 
             self.temporal_gcn_convs.append(GCNLayer(in_dim, temporal_hidden_dim))
-            if use_bn:
-                self.temporal_gcn_bns.append(nn.BatchNorm1d(temporal_hidden_dim))
+            if self.use_norm:
+                self.temporal_gcn_bns.append(
+                    make_normalization(temporal_hidden_dim, normalization)
+                )
 
             for _ in range(temporal_num_layers - 1):
                 self.temporal_gcn_convs.append(GCNLayer(temporal_hidden_dim, temporal_hidden_dim))
-                if use_bn:
-                    self.temporal_gcn_bns.append(nn.BatchNorm1d(temporal_hidden_dim))
+                if self.use_norm:
+                    self.temporal_gcn_bns.append(
+                        make_normalization(temporal_hidden_dim, normalization)
+                    )
 
             temporal_jk_dim = temporal_hidden_dim * temporal_num_layers if use_jk else temporal_hidden_dim
 
         # MLP branch: processes raw node features WITHOUT graph smoothing
         if use_mlp_branch:
             mlp_branch_dim = hidden_dim // 2
-            self.mlp_branch = nn.Sequential(
+            self.mlp_branch = MaskAwareSequential(
                 nn.Linear(in_dim, hidden_dim),
                 nn.ReLU(),
-                nn.BatchNorm1d(hidden_dim) if use_bn else nn.Identity(),
+                make_normalization(hidden_dim, normalization),
                 nn.Dropout(dropout),
                 nn.Linear(hidden_dim, mlp_branch_dim),
                 nn.ReLU(),
-                nn.BatchNorm1d(mlp_branch_dim) if use_bn else nn.Identity(),
+                make_normalization(mlp_branch_dim, normalization),
                 nn.Dropout(dropout * 0.5),
             )
         else:
@@ -881,10 +1053,10 @@ class SpectralGCN(nn.Module):
 
         # Final classifier on concatenated [GCN_jk | temporal_jk | MLP_branch]
         combined_dim = jk_dim + temporal_jk_dim + mlp_branch_dim
-        self.classifier = nn.Sequential(
+        self.classifier = MaskAwareSequential(
             nn.Linear(combined_dim, hidden_dim),
             nn.ReLU(),
-            nn.BatchNorm1d(hidden_dim) if use_bn else nn.Identity(),
+            make_normalization(hidden_dim, normalization),
             nn.Dropout(dropout),
             nn.Linear(hidden_dim, hidden_dim // 2),
             nn.ReLU(),
@@ -892,7 +1064,8 @@ class SpectralGCN(nn.Module):
             nn.Linear(hidden_dim // 2, num_classes)
         )
 
-    def forward(self, X, A_norm, X_edge=None, edge_index=None, A_temporal=None):
+    def forward(self, X, A_norm, X_edge=None, edge_index=None,
+                A_temporal=None, A_raw=None, normalization_mask=None):
         # Node feature masking augmentation during training
         if self.training and self.feat_mask_rate > 0:
             mask = torch.rand_like(X) > self.feat_mask_rate
@@ -901,11 +1074,22 @@ class SpectralGCN(nn.Module):
             X_masked = X
 
         # MLP branch: raw node features (no graph smoothing) 
-        H_mlp = self.mlp_branch(X_masked) if self.use_mlp_branch else None
+        H_mlp = (
+            self.mlp_branch(X_masked, normalization_mask=normalization_mask)
+            if self.use_mlp_branch
+            else None
+        )
 
-        #  GCN branch (similarity graph) 
+        #  GCN branch (similarity graph)
         if self.training and self.drop_edge_rate > 0:
-            A_used = drop_edge(A_norm, self.drop_edge_rate)
+            if self.dropedge_mode == "renormalized":
+                if A_raw is None:
+                    raise ValueError(
+                        "Renormalized DropEdge requires the raw adjacency during training"
+                    )
+                A_used = drop_edge(A_raw, self.drop_edge_rate)
+            else:
+                A_used = drop_edge_legacy(A_norm, self.drop_edge_rate)
         else:
             A_used = A_norm
 
@@ -915,8 +1099,10 @@ class SpectralGCN(nn.Module):
         for i, conv in enumerate(self.gcn_convs):
             H_res = self.input_proj(H) if i == 0 else H
             H = conv(H, A_used)
-            if self.use_bn:
-                H = self.gcn_bns[i](H)
+            if self.use_norm:
+                H = apply_normalization(
+                    self.gcn_bns[i], H, normalization_mask
+                )
             H = F.relu(H + H_res)
             H = self.dropout(H)
             layer_outputs.append(H)
@@ -932,8 +1118,10 @@ class SpectralGCN(nn.Module):
             for i, conv in enumerate(self.temporal_gcn_convs):
                 H_t_res = self.temporal_input_proj(H_t) if i == 0 else H_t
                 H_t = conv(H_t, A_temporal)
-                if self.use_bn:
-                    H_t = self.temporal_gcn_bns[i](H_t)
+                if self.use_norm:
+                    H_t = apply_normalization(
+                        self.temporal_gcn_bns[i], H_t, normalization_mask
+                    )
                 H_t = F.relu(H_t + H_t_res)
                 H_t = self.dropout(H_t)
                 temporal_outputs.append(H_t)
@@ -945,7 +1133,9 @@ class SpectralGCN(nn.Module):
             parts = [H_jk] + ([H_mlp] if H_mlp is not None else [])
             H_combined = torch.cat(parts, dim=1)
 
-        primary_out = self.classifier(H_combined)
+        primary_out = self.classifier(
+            H_combined, normalization_mask=normalization_mask
+        )
         return primary_out, None
 
 
@@ -1066,10 +1256,12 @@ class WarmupCosineScheduler:
 def train_model(model, X, A_norm, y, train_mask, val_mask, optimizer, criterion,
                 scheduler=None, max_epochs=400, patience=40, device=None, verbose=True,
                 monitor="val_bal", X_edge=None, edge_index=None,
-                A_temporal=None):
+                A_temporal=None, A_raw=None):
     """Train with early stopping on validation balanced accuracy."""
     X = X.to(device)
     A_norm = A_norm.to(device)
+    if A_raw is not None:
+        A_raw = A_raw.to(device)
     y = torch.as_tensor(y, dtype=torch.long, device=device)
     tr = torch.as_tensor(train_mask, dtype=torch.bool, device=device)
     va = torch.as_tensor(val_mask, dtype=torch.bool, device=device)
@@ -1096,7 +1288,15 @@ def train_model(model, X, A_norm, y, train_mask, val_mask, optimizer, criterion,
 
         model.train()
         optimizer.zero_grad()
-        out, _ = model(X, A_norm, X_edge=X_edge, edge_index=edge_index, A_temporal=A_temporal)
+        out, _ = model(
+            X,
+            A_norm,
+            X_edge=X_edge,
+            edge_index=edge_index,
+            A_temporal=A_temporal,
+            A_raw=A_raw,
+            normalization_mask=tr,
+        )
         loss = criterion(out[tr], y[tr])
         loss.backward()
         nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -1152,7 +1352,8 @@ def train_model_inductive(model, X_tr, A_train_norm, y_tr, X_train_val, A_train_
                           y_val_block, val_submask, optimizer, criterion,
                           scheduler=None, max_epochs=400, patience=40, device=None, verbose=True,
                           monitor="val_bal",
-                          A_temporal_train=None, A_temporal_train_val=None):
+                          A_temporal_train=None, A_temporal_train_val=None,
+                          A_train_raw=None):
     """Inductive counterpart to train_model: trains on G_train only, early-stops
     on a validation forward pass through the extended G_train_val graph.
 
@@ -1166,6 +1367,8 @@ def train_model_inductive(model, X_tr, A_train_norm, y_tr, X_train_val, A_train_
     """
     X_tr = X_tr.to(device)
     A_train_norm = A_train_norm.to(device)
+    if A_train_raw is not None:
+        A_train_raw = A_train_raw.to(device)
     y_tr_t = torch.as_tensor(y_tr, dtype=torch.long, device=device)
 
     X_train_val = X_train_val.to(device)
@@ -1192,7 +1395,12 @@ def train_model_inductive(model, X_tr, A_train_norm, y_tr, X_train_val, A_train_
 
         model.train()
         optimizer.zero_grad()
-        out, _ = model(X_tr, A_train_norm, A_temporal=A_temporal_train)
+        out, _ = model(
+            X_tr,
+            A_train_norm,
+            A_temporal=A_temporal_train,
+            A_raw=A_train_raw,
+        )
         loss = criterion(out, y_tr_t)
         loss.backward()
         nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -1361,7 +1569,7 @@ def _extract_embeddings(model, X, A_norm, device, X_edge=None, edge_index=None, 
         for i, conv in enumerate(model.gcn_convs):
             H_res = model.input_proj(H) if i == 0 else H
             H = conv(H, A_used)
-            if model.use_bn:
+            if model.use_norm:
                 H = model.gcn_bns[i](H)
             H = F.relu(H + H_res)
             layer_outputs.append(H)
@@ -1374,7 +1582,7 @@ def _extract_embeddings(model, X, A_norm, device, X_edge=None, edge_index=None, 
             for i, conv in enumerate(model.temporal_gcn_convs):
                 H_t_res = model.temporal_input_proj(H_t) if i == 0 else H_t
                 H_t = conv(H_t, A_t)
-                if model.use_bn:
+                if model.use_norm:
                     H_t = model.temporal_gcn_bns[i](H_t)
                 H_t = F.relu(H_t + H_t_res)
                 temporal_outputs.append(H_t)
@@ -1813,10 +2021,25 @@ def compute_uncertainty_metrics(per_seed_probs: np.ndarray) -> dict:
     }
 
 
-def _save_uncertainty_csv(unc: dict, y_all, test_mask, classes: list, out_dir, df=None) -> None:
+def select_uncertainty_threshold(unc: dict, reference_mask,
+                                 percentile=75.0) -> float:
+    """Lock an entropy threshold using a designated non-test partition."""
+    reference_indices = np.where(np.asarray(reference_mask, dtype=bool))[0]
+    if len(reference_indices) == 0:
+        raise ValueError("Uncertainty-threshold reference partition is empty")
+    if not 0.0 <= percentile <= 100.0:
+        raise ValueError("Uncertainty percentile must be between 0 and 100")
+    entropies = np.asarray(unc["predictive_entropy"])[reference_indices]
+    if not np.all(np.isfinite(entropies)):
+        raise ValueError("Uncertainty-threshold reference contains non-finite entropy")
+    return float(np.percentile(entropies, percentile))
+
+
+def _save_uncertainty_csv(unc: dict, y_all, test_mask, classes: list, out_dir,
+                          threshold: float, threshold_reference: str,
+                          threshold_percentile: float, df=None) -> None:
     """Save per-node uncertainty estimates for test nodes to uncertainty_estimates.csv."""
     test_indices = np.where(np.asarray(test_mask, dtype=bool))[0]
-    threshold = float(np.percentile(unc["predictive_entropy"][test_indices], 75))
     rows = []
     for node_i in test_indices:
         row = {
@@ -1829,6 +2052,9 @@ def _save_uncertainty_csv(unc: dict, y_all, test_mask, classes: list, out_dir, d
             "aleatoric_uncertainty": float(unc["mean_entropy"][node_i]),
             "pred_std": float(unc["pred_std"][node_i]),
             "is_high_uncertainty": bool(unc["predictive_entropy"][node_i] > threshold),
+            "high_uncertainty_threshold": float(threshold),
+            "threshold_reference": str(threshold_reference),
+            "threshold_percentile": float(threshold_percentile),
         }
         if df is not None and "subject_id" in df.columns:
             row["subject_id"] = str(df.iloc[node_i]["subject_id"])
@@ -1919,7 +2145,8 @@ def _save_per_seed_probabilities_csv(
     pd.DataFrame(rows).to_csv(out_dir / filename, index=False)
 
 
-def _build_uncertainty_summary(res_te: dict, y_all, test_mask, classes: list, c2i: dict) -> dict:
+def _build_uncertainty_summary(res_te: dict, y_all, test_mask, classes: list,
+                               c2i: dict, threshold: float) -> dict:
     """Build per-class uncertainty summary for metrics.json."""
     if "uncertainty" not in res_te:
         return {}
@@ -1927,7 +2154,6 @@ def _build_uncertainty_summary(res_te: dict, y_all, test_mask, classes: list, c2
     test_idx = np.where(np.asarray(test_mask, dtype=bool))[0]
     if len(test_idx) == 0:
         return {}
-    threshold = float(np.percentile(unc["predictive_entropy"][test_idx], 75))
     out = {}
     for cls in classes:
         ci = c2i[cls]
@@ -1946,13 +2172,18 @@ def _build_uncertainty_summary(res_te: dict, y_all, test_mask, classes: list, c2
     return out
 
 
-def print_uncertainty_summary(unc: dict, y_all, test_mask, classes: list, c2i: dict) -> None:
+def print_uncertainty_summary(unc: dict, y_all, test_mask, classes: list,
+                              c2i: dict, threshold: float,
+                              threshold_reference="validation",
+                              threshold_percentile=75.0) -> None:
     test_idx = np.where(np.asarray(test_mask, dtype=bool))[0]
     if len(test_idx) == 0:
         return
-    threshold = float(np.percentile(unc["predictive_entropy"][test_idx], 75))
     print("\n  === ENSEMBLE UNCERTAINTY SUMMARY ===")
-    print(f"  High-uncertainty threshold (75th pct): {threshold:.4f} nats")
+    print(
+        f"  High-uncertainty threshold ({threshold_percentile:g}th pct of "
+        f"{threshold_reference}): {threshold:.4f} nats"
+    )
     for cls in classes:
         ci = c2i[cls]
         cls_idx = test_idx[np.asarray(y_all)[test_idx] == ci]
@@ -2565,7 +2796,7 @@ def compute_neighbor_influence(model, X, A_norm, node_idx, top_k=10,
         for i, conv in enumerate(model.gcn_convs):
             H_res = model.input_proj(H) if i == 0 else H
             H = conv(H, A_used)
-            if model.use_bn:
+            if model.use_norm:
                 H = model.gcn_bns[i](H)
             H = F.relu(H + H_res)
             layer_outputs.append(H)
@@ -2578,7 +2809,7 @@ def compute_neighbor_influence(model, X, A_norm, node_idx, top_k=10,
             for i, conv in enumerate(model.temporal_gcn_convs):
                 H_t_res = model.temporal_input_proj(H_t) if i == 0 else H_t
                 H_t = conv(H_t, A_t)
-                if model.use_bn:
+                if model.use_norm:
                     H_t = model.temporal_gcn_bns[i](H_t)
                 H_t = F.relu(H_t + H_t_res)
                 temporal_outputs.append(H_t)
@@ -3083,15 +3314,32 @@ def _cf_ensemble_predict(models, X_cf, A_norm, device, X_edge=None, edge_index=N
     Xe_dev = X_edge.to(device)    if X_edge    is not None else None
     ei_dev = edge_index.to(device) if edge_index is not None else None
     At_dev = A_temporal.to(device) if A_temporal is not None else None
-    logits_list = []
+    probability_list = []
     with torch.no_grad():
         for m in models:
             m.eval()
             out, _ = m(X_dev, A_dev, X_edge=Xe_dev, edge_index=ei_dev, A_temporal=At_dev)
-            logits_list.append(out.cpu())
-    avg_logits = torch.stack(logits_list).mean(dim=0)   # (N, C)
-    probs = torch.softmax(avg_logits, dim=-1)
-    return avg_logits.argmax(dim=1).numpy(), probs.numpy()
+            probability_list.append(torch.softmax(out, dim=-1).cpu())
+    probabilities = torch.stack(probability_list).mean(dim=0)   # (N, C)
+    return probabilities.argmax(dim=1).numpy(), probabilities.numpy()
+
+
+def load_feature_importance_csv(path):
+    """Load a saved class-wise feature ranking for counterfactual replay."""
+    frame = pd.read_csv(path, dtype={"class": str})
+    required = {"class", "rank", "feature", "importance"}
+    missing = required.difference(frame.columns)
+    if missing:
+        raise ValueError(
+            f"Feature-importance CSV is missing required columns: {sorted(missing)}"
+        )
+    frame = frame.sort_values(["class", "rank"])
+    return {
+        str(class_label): list(
+            zip(group["feature"].astype(str), group["importance"].astype(float))
+        )
+        for class_label, group in frame.groupby("class", sort=False)
+    }
 
 
 def find_counterfactual_for_node(
@@ -3388,12 +3636,20 @@ def run_single_fold(df, y_all, edge_feat_cols, classes, c2i,
     # Full similarity matrix
     similarity_full = compute_similarity_matrix(X_edge, kernel=args.kernel, rbf_gamma=args.rbf_gamma)
 
-    # Temporal decay on same-subject edges
+    # Temporal decay on same-subject population edges
     subject_ids = df['subject_id'].values
     if args.temporal_lambda > 0 and not args.no_temporal_edges and "visit_month" in df.columns:
-        similarity_full = apply_temporal_decay(
-            similarity_full, df["visit_month"].values, subject_ids, args.temporal_lambda
-        )
+        if args.temporal_direction == "causal":
+            similarity_full, _ = apply_temporal_decay_causal(
+                similarity_full,
+                df["visit_month"].values,
+                subject_ids,
+                args.temporal_lambda,
+            )
+        else:
+            similarity_full = apply_temporal_decay(
+                similarity_full, df["visit_month"].values, subject_ids, args.temporal_lambda
+            )
     elif verbose:
         if args.no_temporal_edges:
             print(f"[temporal] Edge decay disabled (--no_temporal_edges)")
@@ -3434,6 +3690,17 @@ def run_single_fold(df, y_all, edge_feat_cols, classes, c2i,
         after_edges = int(np.count_nonzero(A))
         if verbose:
             print(f"[edge] Threshold={args.sim_threshold}: pruned {before_edges - after_edges} weak edges")
+
+    population_causal_stats = None
+    if args.temporal_direction == "causal" and "visit_month" in df.columns:
+        A, population_causal_stats = enforce_causal_same_subject_edges(
+            A, df["visit_month"].values, subject_ids
+        )
+        if verbose:
+            print(
+                "[temporal-causal] Population graph future-facing same-subject "
+                f"edges removed: {population_causal_stats['future_edges_removed']}"
+            )
 
     if verbose:
         n_total_possible = A.shape[0] * (A.shape[0] - 1)
@@ -3494,6 +3761,7 @@ def run_single_fold(df, y_all, edge_feat_cols, classes, c2i,
     A_hat = A + np.eye(N)
     A_norm = symmetric_normalize(A_hat)
     X_tensor = torch.tensor(X_all, dtype=torch.float32)
+    A_raw_tensor = torch.tensor(A, dtype=torch.float32)
     A_norm_tensor = torch.tensor(A_norm, dtype=torch.float32)
 
     # Temporal adjacency (optional)
@@ -3508,13 +3776,17 @@ def run_single_fold(df, y_all, edge_feat_cols, classes, c2i,
             temporal_lam = args.temporal_lambda if args.temporal_lambda > 0 else 0.05
             A_temporal_raw, A_temporal_norm_mat = build_temporal_adjacency(
                 df["visit_month"].values, df["subject_id"].values,
-                temporal_lambda=temporal_lam, topk=args.temporal_topk
+                temporal_lambda=temporal_lam, topk=args.temporal_topk,
+                direction=args.temporal_direction,
             )
             A_temporal_norm_tensor = torch.tensor(A_temporal_norm_mat, dtype=torch.float32)
             if verbose:
                 t_degrees = (A_temporal_raw > 0).sum(axis=1)
                 t_edges = int(np.count_nonzero(A_temporal_raw))
-                print(f"\n[temporal-branch] Temporal graph built (same-subject edges only)")
+                print(
+                    "\n[temporal-branch] Temporal graph built "
+                    f"(same-subject edges only, direction={args.temporal_direction})"
+                )
                 print(f"[temporal-branch] Edges: {t_edges}, lambda={temporal_lam}, topk={args.temporal_topk}")
                 print(f"[temporal-branch] Degree: min={t_degrees.min()}, max={t_degrees.max()}, "
                       f"mean={t_degrees.mean():.1f}")
@@ -3554,8 +3826,10 @@ def run_single_fold(df, y_all, edge_feat_cols, classes, c2i,
                 )
             model = SpectralGCN(
                 in_dim=X_all.shape[1], hidden_dim=args.hidden, num_classes=len(classes),
-                num_gcn_layers=args.num_gcn_layers, dropout=args.dropout, use_bn=args.use_bn,
+                num_gcn_layers=args.num_gcn_layers, dropout=args.dropout,
+                normalization=args.normalization,
                 drop_edge_rate=args.drop_edge_rate, feat_mask_rate=args.feat_mask_rate,
+                dropedge_mode=args.dropedge_mode,
                 use_temporal_branch=args.use_temporal_branch,
                 temporal_hidden_dim=args.temporal_branch_hidden,
                 temporal_num_layers=args.temporal_branch_layers,
@@ -3579,8 +3853,10 @@ def run_single_fold(df, y_all, edge_feat_cols, classes, c2i,
 
             model = SpectralGCN(
                 in_dim=X_all.shape[1], hidden_dim=args.hidden, num_classes=len(classes),
-                num_gcn_layers=args.num_gcn_layers, dropout=args.dropout, use_bn=args.use_bn,
+                num_gcn_layers=args.num_gcn_layers, dropout=args.dropout,
+                normalization=args.normalization,
                 drop_edge_rate=args.drop_edge_rate, feat_mask_rate=args.feat_mask_rate,
+                dropedge_mode=args.dropedge_mode,
                 use_temporal_branch=args.use_temporal_branch,
                 temporal_hidden_dim=args.temporal_branch_hidden,
                 temporal_num_layers=args.temporal_branch_layers,
@@ -3593,8 +3869,11 @@ def run_single_fold(df, y_all, edge_feat_cols, classes, c2i,
                 jk_dim = args.hidden * args.num_gcn_layers
                 print(f"[model] SpectralGCN: {X_all.shape[1]} -> {args.hidden} (x{args.num_gcn_layers} GCN) "
                       f"-> JK({jk_dim}) -> MLP -> {len(classes)}")
-                print(f"[model] BN={args.use_bn}, Dropout={args.dropout}, DropEdge={args.drop_edge_rate}, "
-                      f"FeatMask={args.feat_mask_rate}, Residual=True")
+                print(
+                    f"[model] Normalization={args.normalization}, Dropout={args.dropout}, "
+                    f"DropEdge={args.drop_edge_rate} ({args.dropedge_mode}), "
+                    f"FeatMask={args.feat_mask_rate}, Residual=True"
+                )
                 print(f"[model] Parameters: {total_params:,}")
                 if args.use_temporal_branch:
                     t_jk = args.temporal_branch_hidden * args.temporal_branch_layers
@@ -3614,7 +3893,8 @@ def run_single_fold(df, y_all, edge_feat_cols, classes, c2i,
                 device=device, verbose=verbose,
                 monitor=args.monitor,
                 X_edge=X_edge_tensor, edge_index=edge_index_tensor,
-                A_temporal=A_temporal_norm_tensor
+                A_temporal=A_temporal_norm_tensor,
+                A_raw=A_raw_tensor,
             )
 
             metric_name = "val_bal" if args.monitor == "val_bal" else "val_loss"
@@ -3654,11 +3934,48 @@ def run_single_fold(df, y_all, edge_feat_cols, classes, c2i,
         if has_test:
             print_metrics("Test", res_te, classes, c2i)
 
-    # Save uncertainty estimates CSV 
+    uncertainty_threshold = None
+    uncertainty_threshold_info = None
     if has_test and "uncertainty" in res_te:
-        _save_uncertainty_csv(res_te["uncertainty"], y_all, test_mask, classes, out_dir, df=df)
+        if args.uncertainty_reference == "validation":
+            threshold_uncertainty = res_va["uncertainty"]
+            threshold_mask = val_mask
+        else:
+            threshold_uncertainty = res_te["uncertainty"]
+            threshold_mask = test_mask
+        uncertainty_threshold = select_uncertainty_threshold(
+            threshold_uncertainty,
+            threshold_mask,
+            percentile=args.uncertainty_percentile,
+        )
+        uncertainty_threshold_info = {
+            "value": float(uncertainty_threshold),
+            "reference_partition": args.uncertainty_reference,
+            "percentile": float(args.uncertainty_percentile),
+        }
+        if out_dir is not None:
+            _save_uncertainty_csv(
+                res_te["uncertainty"],
+                y_all,
+                test_mask,
+                classes,
+                out_dir,
+                threshold=uncertainty_threshold,
+                threshold_reference=args.uncertainty_reference,
+                threshold_percentile=args.uncertainty_percentile,
+                df=df,
+            )
         if verbose:
-            print_uncertainty_summary(res_te["uncertainty"], y_all, test_mask, classes, c2i)
+            print_uncertainty_summary(
+                res_te["uncertainty"],
+                y_all,
+                test_mask,
+                classes,
+                c2i,
+                threshold=uncertainty_threshold,
+                threshold_reference=args.uncertainty_reference,
+                threshold_percentile=args.uncertainty_percentile,
+            )
 
     #  Per-seed metrics (for confidence intervals) 
     per_seed_results = []
@@ -3705,7 +4022,10 @@ def run_single_fold(df, y_all, edge_feat_cols, classes, c2i,
         "pre": pre, "num_cols": num_cols, "cat_cols": cat_cols, "X_all": X_all,
         "X_edge_tensor": X_edge_tensor, "edge_index_tensor": edge_index_tensor,
         "A_temporal_norm_tensor": A_temporal_norm_tensor,
-        "X_tensor": X_tensor, "A_norm_tensor": A_norm_tensor,
+        "X_tensor": X_tensor, "A_raw_tensor": A_raw_tensor,
+        "A_norm_tensor": A_norm_tensor,
+        "uncertainty_threshold": uncertainty_threshold_info,
+        "population_causal_stats": population_causal_stats,
     }
 
     if getattr(args, "mci_decision_adjustment", False) and has_test:
@@ -3752,9 +4072,34 @@ def run_single_fold(df, y_all, edge_feat_cols, classes, c2i,
     # runs under model.eval() with dropout and DropEdge disabled, so it has no RNG dependence.
     set_seed(args.seed)
 
-    # Optional: GNNExplainer 
+    # Optional: GNNExplainer
     _cf_feature_importance = None   # populated below if run_explainer; reused by counterfactual block
     _cf_feature_names = None        # likewise
+    reuse_feature_importance_csv = getattr(args, "reuse_feature_importance_csv", None)
+    if reuse_feature_importance_csv:
+        _cf_feature_names = get_feature_names(pre, num_cols, cat_cols)
+        if len(_cf_feature_names) != X_all.shape[1]:
+            _cf_feature_names = [f"feature_{i}" for i in range(X_all.shape[1])]
+        _cf_feature_importance = load_feature_importance_csv(
+            reuse_feature_importance_csv
+        )
+        unknown_features = {
+            feature
+            for rankings in _cf_feature_importance.values()
+            for feature, _ in rankings
+            if feature not in _cf_feature_names
+        }
+        if unknown_features:
+            raise ValueError(
+                "Saved feature rankings do not match the current model matrix: "
+                f"{sorted(unknown_features)}"
+            )
+        result["feature_importance"] = _cf_feature_importance
+        if verbose:
+            print(
+                "  [explainer] Reusing class-wise feature rankings from "
+                f"{reuse_feature_importance_csv}"
+            )
     if run_explainer and out_dir is not None:
         feature_names = get_feature_names(pre, num_cols, cat_cols)
         if len(feature_names) != X_all.shape[1]:
@@ -3875,9 +4220,9 @@ def run_single_fold(df, y_all, edge_feat_cols, classes, c2i,
 
 # Inductive Sensitivity Analysis Pipeline
 #
-# Everything below is additive: run_single_fold (above) and the transductive
-# main() flow are never called by, or modified for, this path. Reached only
-# via --eval_mode inductive (default is "transductive", which is untouched).
+# This path is reached only via --eval_mode inductive. It reuses the selected
+# preprocessing, architecture, normalization, and temporal-direction controls
+# while replacing transductive graph construction with training-fitted blocks.
 
 def verify_inductive_graphs(A_train, A_train_val, A_train_test, n_tr, n_val, n_te,
                             probe_model, device,
@@ -4154,6 +4499,7 @@ inductive results and configuration files.
     X_train_val_tensor = torch.tensor(np.concatenate([X_tr_np, X_val_np], axis=0), dtype=torch.float32)
     X_train_test_tensor = torch.tensor(np.concatenate([X_tr_np, X_te_np], axis=0), dtype=torch.float32)
     G_train_norm_tensor = torch.tensor(G_train_norm, dtype=torch.float32)
+    A_train_raw_tensor = torch.tensor(A_train, dtype=torch.float32)
     G_train_val_norm_tensor = torch.tensor(G_train_val_norm, dtype=torch.float32)
     G_train_test_norm_tensor = torch.tensor(G_train_test_norm, dtype=torch.float32)
 
@@ -4204,8 +4550,10 @@ inductive results and configuration files.
     set_seed(args.seed)
     probe_model = SpectralGCN(
         in_dim=X_all.shape[1], hidden_dim=args.hidden, num_classes=len(classes),
-        num_gcn_layers=args.num_gcn_layers, dropout=args.dropout, use_bn=args.use_bn,
+        num_gcn_layers=args.num_gcn_layers, dropout=args.dropout,
+        normalization=args.normalization,
         drop_edge_rate=args.drop_edge_rate, feat_mask_rate=args.feat_mask_rate,
+        dropedge_mode=args.dropedge_mode,
         use_temporal_branch=use_temporal_branch,
         temporal_hidden_dim=args.temporal_branch_hidden,
         temporal_num_layers=args.temporal_branch_layers,
@@ -4256,8 +4604,10 @@ inductive results and configuration files.
 
         model = SpectralGCN(
             in_dim=X_all.shape[1], hidden_dim=args.hidden, num_classes=len(classes),
-            num_gcn_layers=args.num_gcn_layers, dropout=args.dropout, use_bn=args.use_bn,
+            num_gcn_layers=args.num_gcn_layers, dropout=args.dropout,
+            normalization=args.normalization,
             drop_edge_rate=args.drop_edge_rate, feat_mask_rate=args.feat_mask_rate,
+            dropedge_mode=args.dropedge_mode,
             use_temporal_branch=use_temporal_branch,
             temporal_hidden_dim=args.temporal_branch_hidden,
             temporal_num_layers=args.temporal_branch_layers,
@@ -4276,6 +4626,7 @@ inductive results and configuration files.
             optimizer, criterion, scheduler=scheduler, max_epochs=args.epochs, patience=args.patience,
             device=device, verbose=verbose, monitor=args.monitor,
             A_temporal_train=G_train_temporal_norm_tensor, A_temporal_train_val=G_train_val_temporal_norm_tensor,
+            A_train_raw=A_train_raw_tensor,
         )
 
         metric_name = "val_bal" if args.monitor == "val_bal" else "val_loss"
@@ -4637,14 +4988,18 @@ def run_nested_cv(df, y_all, edge_feat_cols, classes, c2i,
 
     summary = {
         "balanced_accuracy_mean": float(np.mean(bal_accs)),
-        "balanced_accuracy_std": float(np.std(bal_accs)),
+        "balanced_accuracy_std": float(bal_ci["std"]),
         "balanced_accuracy_ci": bal_ci,
         "per_fold_bal_acc": [float(a) for a in bal_accs],
         "decision_adjusted_balanced_accuracy_ci": _clean_for_json(adjusted_bal_ci),
         "decision_adjusted_per_fold_bal_acc": [float(a) for a in adjusted_bal_accs],
         "decision_adjusted_per_class_recall_ci": _clean_for_json(adjusted_recall_cis),
         "per_class_recall_mean": {cls: float(np.mean(v)) for cls, v in per_class_recalls.items() if v},
-        "per_class_recall_std": {cls: float(np.std(v)) for cls, v in per_class_recalls.items() if v},
+        "per_class_recall_std": {
+            cls: float(recall_cis[cls]["std"])
+            for cls, values in per_class_recalls.items()
+            if values
+        },
         "per_class_recall_ci": _clean_for_json(recall_cis),
         "auc_ovr_macro_ci": _clean_for_json(auc_ovr_ci),
         "per_fold_auc_ovr": [float(a) for a in auc_ovrs] if auc_ovrs else [],
@@ -4689,10 +5044,39 @@ def main():
     ap.add_argument("--hidden", type=int, default=256, help="Hidden dimension for GCN + MLP layers")
     ap.add_argument("--num_gcn_layers", type=int, default=2, help="Number of GCN encoder layers")
     ap.add_argument("--dropout", type=float, default=0.6)
-    ap.add_argument("--drop_edge_rate", type=float, default=0.2, help="DropEdge rate during training")
+    ap.add_argument(
+        "--drop_edge_rate",
+        type=float,
+        default=0.0,
+        help="DropEdge rate during training (default: 0; disabled in the selected model).",
+    )
+    ap.add_argument(
+        "--dropedge_mode",
+        choices=["renormalized", "legacy"],
+        default="renormalized",
+        help="Drop raw paired edges and renormalize (default), or reproduce the archived normalized-entry implementation.",
+    )
     ap.add_argument("--feat_mask_rate", type=float, default=0.05, help="Node feature masking rate during training")
-    ap.add_argument("--use_bn", action="store_true", default=True, help="Use BatchNorm (default: True)")
-    ap.add_argument("--no_bn", dest="use_bn", action="store_false")
+    ap.add_argument(
+        "--normalization",
+        choices=["masked_batch", "layer", "batch", "none"],
+        default="masked_batch",
+        help="Node normalization. Masked BatchNorm fits statistics on training nodes only (default: masked_batch).",
+    )
+    ap.add_argument(
+        "--use_bn",
+        dest="normalization",
+        action="store_const",
+        const="batch",
+        help="Legacy alias for --normalization batch.",
+    )
+    ap.add_argument(
+        "--no_bn",
+        dest="normalization",
+        action="store_const",
+        const="none",
+        help="Legacy alias for --normalization none.",
+    )
     ap.add_argument("--lr", type=float, default=1e-4)
     ap.add_argument("--weight_decay", type=float, default=5e-3, help="AdamW weight decay")
     ap.add_argument("--epochs", type=int, default=300)
@@ -4717,6 +5101,12 @@ def main():
                     help="Disable subject-aware neighbor constraints (original behavior)")
     ap.add_argument("--temporal_lambda", type=float, default=0.2,
                     help="Temporal decay rate for same-subject edge weights (default: 0.2)")
+    ap.add_argument(
+        "--temporal_direction",
+        choices=["causal", "bidirectional"],
+        default="causal",
+        help="Restrict same-subject messages to current/past visits (default), or reproduce bidirectional archived graphs.",
+    )
     ap.add_argument("--no_temporal_edges", action="store_true", default=False,
                     help="Disable temporal decay on edge weights")
     ap.add_argument("--focal_gamma", type=float, default=2.0, help="Focal loss gamma")
@@ -4725,6 +5115,18 @@ def main():
     ap.add_argument("--monitor", choices=["val_loss", "val_bal"], default="val_bal",
                     help="Early stopping metric (default: val_bal)")
     ap.add_argument("--num_seeds", type=int, default=5, help="Number of seeds for ensemble")
+    ap.add_argument(
+        "--uncertainty_reference",
+        choices=["validation", "test"],
+        default="validation",
+        help="Partition used to lock the high-uncertainty entropy threshold (default: validation).",
+    )
+    ap.add_argument(
+        "--uncertainty_percentile",
+        type=float,
+        default=75.0,
+        help="Entropy percentile used for the high-uncertainty warning threshold (default: 75).",
+    )
     ap.add_argument("--max_missing", type=float, default=0.8)
     ap.add_argument("--collapse_ge1", action="store_true", default=True)
     ap.add_argument("--no_collapse_ge1", dest="collapse_ge1", action="store_false")
@@ -4751,6 +5153,12 @@ def main():
     ap.add_argument("--verbose", action="store_true")
     ap.add_argument("--no_explain", action="store_true", default=False,
                     help="Skip GNNExplainer and counterfactual explanations (faster runs)")
+    ap.add_argument(
+        "--reuse_feature_importance_csv",
+        default=None,
+        help="Reuse a feature_importance.csv generated from the same checkpoints, "
+             "skip GNNExplainer/neighborhood replay, and recompute counterfactuals.",
+    )
     ap.add_argument(
         "--faithfulness_evidence_csv",
         default=None,
@@ -4797,8 +5205,8 @@ def main():
     ap.add_argument("--cf_perturb_steps", nargs="+", type=float, default=[0.5, 1.0, 1.5, 2.0],
                     help="Perturbation step sizes in units of std dev (default: 0.5 1.0 1.5 2.0)")
     ap.add_argument("--eval_mode", choices=["transductive", "inductive"], default="transductive",
-                    help="'transductive' (default): unchanged existing behavior, val/test nodes "
-                         "participate in graph message-passing. 'inductive': freeze all graph "
+                    help="'transductive' (default): val/test predictor nodes participate in graph "
+                         "message-passing. 'inductive': freeze all graph "
                          "statistics on the training block and build strictly-directed "
                          "train/val/test graphs (sensitivity analysis, not used for reported results "
                          "unless explicitly run) - see run_single_fold_inductive().")
@@ -4808,6 +5216,15 @@ def main():
         ap.error("--split_file applies to single held-out runs, not --nested_cv")
     if args.target == "cdr" and args.exclude_cdr_feature:
         ap.error("--exclude_cdr_feature is only applicable when --target diagnosis")
+    if args.reuse_feature_importance_csv and (
+        args.no_explain or not args.counterfactual or args.test_label_free
+    ):
+        ap.error(
+            "--reuse_feature_importance_csv is for counterfactual replay and cannot "
+            "be combined with --no_explain, --no_counterfactual, or --test_label_free"
+        )
+    if not 0.0 <= args.uncertainty_percentile <= 100.0:
+        ap.error("--uncertainty_percentile must be between 0 and 100")
 
     # temporal branch hidden dim default
     if args.temporal_branch_hidden is None:
@@ -4977,7 +5394,9 @@ def main():
         train_mask, val_mask, test_mask,
         args, device, out_dir=out_dir,
         verbose=args.verbose, save_models=True,
-        run_explainer=not args.no_explain,
+        run_explainer=(
+            not args.no_explain and not args.reuse_feature_importance_csv
+        ),
     )
 
     # Early return if --test_label_free ran the label-permutation regression test —
@@ -5008,6 +5427,10 @@ def main():
     plot_seed_confusion_matrix(result.get("per_seed_results", []), seeds, 44, classes, out_dir)
     plot_mci_recall_ablation(out_dir)
     class_importance = result.get("feature_importance", {})
+    saved_importance_path = out_dir / "feature_importance.csv"
+    if not class_importance and saved_importance_path.exists():
+        class_importance = load_feature_importance_csv(saved_importance_path)
+        result["feature_importance"] = class_importance
     if class_importance:
         plot_feature_importance(class_importance, classes, out_dir)
     node_results = result.get("neighbor_influence", {})
@@ -5064,7 +5487,20 @@ def main():
             "split": {"train": int(train_mask.sum()), "val": int(val_mask.sum()), "test": int(test_mask.sum())},
             "args": vars(args),
             "feature_importance": {k: v for k, v in class_importance.items()},
-            "uncertainty_summary": _build_uncertainty_summary(res_te, y_all, test_mask, classes, c2i),
+            "uncertainty_threshold": result.get("uncertainty_threshold"),
+            "uncertainty_summary": (
+                _build_uncertainty_summary(
+                    res_te,
+                    y_all,
+                    test_mask,
+                    classes,
+                    c2i,
+                    result["uncertainty_threshold"]["value"],
+                )
+                if result.get("uncertainty_threshold")
+                else {}
+            ),
+            "population_causal_stats": result.get("population_causal_stats"),
             "decision_adjustment": result.get("decision_adjustment"),
             "explanation_faithfulness": faithfulness_result,
         }, f, indent=2)

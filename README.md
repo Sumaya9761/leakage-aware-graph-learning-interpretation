@@ -18,7 +18,13 @@ patient-level interpretation. ADNI data are not distributed here.
 - `run_bioleaflet_rag_prototype.py`: evidence-grounded follow-up evaluation
 - `publication_validation.py`: calibration, matched logistic regression, and
   participant-cluster bootstrap analysis
+- `paired_ablation_validation.py`: paired participant-cluster bootstrap
+  comparisons between the full ensemble and fixed-split ablations
+- `create_publication_figures.py`: reproducible aggregate confusion-matrix,
+  counterfactual, and diagnosis--CDR concordance figures
 - `verifier_stress_test.py`: clean-control and deterministic corruption tests
+- `synthetic_smoke_test.py`: generated, non-ADNI end-to-end pipeline check
+- `.github/workflows/ci.yml`: data-free unit and synthetic integration tests
 - `experiment_commands.json`: commands used for all reported experiments
 - `requirements_flan_t5_oof.txt`: exact direct dependencies for the reported
   out-of-fold language-model run
@@ -76,8 +82,18 @@ python hybrid_gnn.py \
   --single study_data_no_cdr.csv \
   --out_dir results/main_model \
   --target diagnosis \
+  --normalization masked_batch \
+  --temporal_direction causal \
+  --drop_edge_rate 0 \
+  --uncertainty_reference validation \
   --verbose
 ```
+
+The selected model restricts same-subject temporal messages to current and
+earlier visits. During transductive training, BatchNorm statistics are fitted
+only from training nodes. DropEdge is disabled, and the elevated-uncertainty
+entropy threshold is locked from the validation partition before test-report
+generation.
 
 The run exports `split_subject_ids.csv`. This file is a restricted local
 artifact because it contains ADNI subject identifiers.
@@ -97,6 +113,8 @@ python hybrid_gnn.py \
   --require_cdr_complete \
   --exclude_cdr_feature \
   --split_file results/main_model/split_subject_ids.csv \
+  --normalization masked_batch --temporal_direction causal \
+  --drop_edge_rate 0 --uncertainty_reference validation \
   --no_explain --verbose
 
 python hybrid_gnn.py \
@@ -105,6 +123,8 @@ python hybrid_gnn.py \
   --target cdr \
   --require_cdr_complete \
   --split_file results/main_model/split_subject_ids.csv \
+  --normalization masked_batch --temporal_direction causal \
+  --drop_edge_rate 0 --uncertainty_reference validation \
   --no_explain --verbose
 ```
 
@@ -122,6 +142,19 @@ python baseline_comparison.py \
 
 Additional nested-CV, inductive, ablation, interpretation, FLAN-T5, and RAG
 commands are recorded in `experiment_commands.json`.
+
+## Data-free reproducibility check
+
+The selected pipeline can be exercised without ADNI access by generating a
+small synthetic longitudinal cohort and running a two-epoch integration test:
+
+```bash
+python synthetic_smoke_test.py
+```
+
+This check validates cohort loading, participant-disjoint splitting, graph
+construction, model training, and output schemas. Its predictive metric is a
+software diagnostic only and must not be interpreted as scientific evidence.
 
 ## Participant-disjoint FLAN-T5 evaluation
 
@@ -171,12 +204,10 @@ only if the candidate remains invalid after this targeted step.
 
 ## Publication validation analyses
 
-The nested-CV command reports the raw GNN result and, separately, a post-hoc
-MCI decision sensitivity analysis. Within each outer fold, an additive MCI
-log-probability offset is selected using only the internal validation rows,
-locked, and then applied to the untouched outer-test rows. This is a decision
-rule adjustment, not probability calibration, and the raw result remains the
-primary estimate.
+The reported nested-CV command uses the raw GNN probabilities as its primary
+estimate. The optional `--mci_decision_adjustment` flag remains available for
+a validation-locked sensitivity analysis, but it is not part of the selected
+publication command because it did not improve the five-fold result.
 
 `publication_validation.py` uses the fixed subject-disjoint split to fit a
 matched logistic-regression comparator on training rows only, select
@@ -184,6 +215,12 @@ temperature scaling and any candidate fusion on validation rows only, and
 compute calibration metrics plus 10,000-replicate participant-cluster
 bootstrap intervals. If validation selects a GNN fusion weight of 1.0, no
 fusion improvement should be claimed.
+
+`paired_ablation_validation.py` aligns the full and ablated probability
+ensembles visit by visit, then resamples participants so that all repeated
+visits remain together. The resulting full-minus-ablation balanced-accuracy
+intervals are inferential summaries of the fixed test partition; the
+ablations were not used to reselect the primary architecture.
 
 GNNExplainer produces a local ranking for every held-out visit, targeting the
 ensemble-predicted class. Aggregate class profiles are computed separately
@@ -210,6 +247,18 @@ summaries. Per-visit
 probabilities, participant assignments, model checkpoints, and ADNI records
 are deliberately excluded.
 
+Publication figures can be regenerated locally after the restricted per-visit
+outputs have been produced:
+
+```bash
+python create_publication_figures.py --results_dir results/main_model \
+  --cdr_csv results/cdr_discordance/diagnosis_vs_cdr_agreement.csv \
+  --out_dir results/publication_figures
+```
+
+Only the resulting aggregate figures and `figure_metrics.json` are suitable
+for public release; the input CSV files remain restricted.
+
 ## Data availability
 
 The study data were obtained from the Alzheimer's Disease Neuroimaging
@@ -217,3 +266,7 @@ Initiative (ADNI) and remain subject to ADNI data-use requirements. This
 repository intentionally excludes data rows and direct participant
 identifiers. Only code and non-identifying aggregate summaries should be made
 public.
+
+## License
+
+This software is released under the MIT License. See [LICENSE](LICENSE).

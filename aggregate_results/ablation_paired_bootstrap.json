@@ -1,0 +1,196 @@
+{
+  "schema_version": 1,
+  "design": {
+    "evaluation": "fixed subject-disjoint test partition",
+    "reference_model": "full hybrid GNN probability ensemble",
+    "test_visits": 148,
+    "test_participants": 34,
+    "selection_use": "inference only; ablations were not used to reselect the primary model"
+  },
+  "reference_metrics": {
+    "balanced_accuracy": 0.7805383022774327,
+    "accuracy": 0.7702702702702703,
+    "macro_f1": 0.7783721979665895,
+    "recall": {
+      "0": 0.9130434782608695,
+      "0.5": 0.6666666666666666,
+      "1+": 0.7619047619047619
+    }
+  },
+  "comparisons": {
+    "no_temporal": {
+      "ablation_metrics": {
+        "balanced_accuracy": 0.7812284334023464,
+        "accuracy": 0.7702702702702703,
+        "macro_f1": 0.7795641215243819,
+        "recall": {
+          "0": 0.8913043478260869,
+          "0.5": 0.6666666666666666,
+          "1+": 0.7857142857142857
+        }
+      },
+      "paired_participant_bootstrap": {
+        "requested_replicates": 10000,
+        "accepted_replicates": 10000,
+        "rejected_missing_class": 0,
+        "seed": 42,
+        "unit": "participant",
+        "difference_direction": "full model minus ablation",
+        "differences": {
+          "balanced_accuracy": {
+            "mean_difference": -0.0007569385276848057,
+            "ci95": [
+              -0.022005014649538083,
+              0.019607843137254832
+            ],
+            "probability_reference_gt_candidate": 0.4136,
+            "two_sided_bootstrap_probability": 1.0
+          },
+          "recall_0": {
+            "mean_difference": 0.021331444312920177,
+            "ci95": [
+              0.0,
+              0.06818181818181823
+            ],
+            "probability_reference_gt_candidate": 0.6399,
+            "two_sided_bootstrap_probability": 0.7203279672032796
+          },
+          "recall_0.5": {
+            "mean_difference": 0.0,
+            "ci95": [
+              0.0,
+              0.0
+            ],
+            "probability_reference_gt_candidate": 0.0,
+            "two_sided_bootstrap_probability": 1.0
+          },
+          "recall_1+": {
+            "mean_difference": -0.023602259895974594,
+            "ci95": [
+              -0.07692307692307698,
+              0.0
+            ],
+            "probability_reference_gt_candidate": 0.0,
+            "two_sided_bootstrap_probability": 0.7279272072792721
+          }
+        }
+      }
+    },
+    "no_mlp": {
+      "ablation_metrics": {
+        "balanced_accuracy": 0.7790545203588682,
+        "accuracy": 0.7635135135135135,
+        "macro_f1": 0.7710524043857377,
+        "recall": {
+          "0": 0.9347826086956522,
+          "0.5": 0.6166666666666667,
+          "1+": 0.7857142857142857
+        }
+      },
+      "paired_participant_bootstrap": {
+        "requested_replicates": 10000,
+        "accepted_replicates": 10000,
+        "rejected_missing_class": 0,
+        "seed": 42,
+        "unit": "participant",
+        "difference_direction": "full model minus ablation",
+        "differences": {
+          "balanced_accuracy": {
+            "mean_difference": 0.0012614365939096295,
+            "ci95": [
+              -0.02951308413416249,
+              0.02824858757062132
+            ],
+            "probability_reference_gt_candidate": 0.5455,
+            "two_sided_bootstrap_probability": 0.9091090890910909
+          },
+          "recall_0": {
+            "mean_difference": -0.021724595615013425,
+            "ci95": [
+              -0.07407407407407407,
+              0.0
+            ],
+            "probability_reference_gt_candidate": 0.0,
+            "two_sided_bootstrap_probability": 0.7499250074992501
+          },
+          "recall_0.5": {
+            "mean_difference": 0.04976296132959019,
+            "ci95": [
+              0.0,
+              0.10526315789473684
+            ],
+            "probability_reference_gt_candidate": 0.9598,
+            "two_sided_bootstrap_probability": 0.0805919408059194
+          },
+          "recall_1+": {
+            "mean_difference": -0.024254055932847872,
+            "ci95": [
+              -0.08163265306122458,
+              0.0
+            ],
+            "probability_reference_gt_candidate": 0.0,
+            "two_sided_bootstrap_probability": 0.7167283271672833
+          }
+        }
+      }
+    },
+    "population_gcn_only": {
+      "ablation_metrics": {
+        "balanced_accuracy": 0.7778467908902691,
+        "accuracy": 0.7702702702702703,
+        "macro_f1": 0.7777972519744671,
+        "recall": {
+          "0": 0.8478260869565217,
+          "0.5": 0.7,
+          "1+": 0.7857142857142857
+        }
+      },
+      "paired_participant_bootstrap": {
+        "requested_replicates": 10000,
+        "accepted_replicates": 10000,
+        "rejected_missing_class": 0,
+        "seed": 42,
+        "unit": "participant",
+        "difference_direction": "full model minus ablation",
+        "differences": {
+          "balanced_accuracy": {
+            "mean_difference": 0.0032763099913635605,
+            "ci95": [
+              -0.03267286706349213,
+              0.04127117244948959
+            ],
+            "probability_reference_gt_candidate": 0.5643,
+            "two_sided_bootstrap_probability": 0.8715128487151285
+          },
+          "recall_0": {
+            "mean_difference": 0.0648631520362642,
+            "ci95": [
+              0.0,
+              0.13157894736842102
+            ],
+            "probability_reference_gt_candidate": 0.9547,
+            "two_sided_bootstrap_probability": 0.0907909209079092
+          },
+          "recall_0.5": {
+            "mean_difference": -0.03143196216619893,
+            "ci95": [
+              -0.10447761194029848,
+              0.05263157894736836
+            ],
+            "probability_reference_gt_candidate": 0.1472,
+            "two_sided_bootstrap_probability": 0.5397460253974603
+          },
+          "recall_1+": {
+            "mean_difference": -0.023602259895974594,
+            "ci95": [
+              -0.07692307692307698,
+              0.0
+            ],
+            "probability_reference_gt_candidate": 0.0,
+            "two_sided_bootstrap_probability": 0.7279272072792721
+          }
+        }
+      }
+    }
+  }
+}

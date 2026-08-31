@@ -1,113 +1,105 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "generated_on": "2026-08-30",
   "metric_convention": {
-    "headline": "mean and sample standard deviation across five independently trained seeds",
-    "interval": "two-sided 95% t interval across the five seeds",
-    "ensemble": "metrics after averaging class probabilities across the five seeds"
+    "primary_deployment_result": "metrics after averaging class probabilities across five independently trained models",
+    "seed_stability": "mean and sample standard deviation across seeds 42-46",
+    "seed_interval": "two-sided 95% t interval across five seeds",
+    "nested_interval": "two-sided 95% t interval across five outer folds"
   },
-  "verified_environment": {
-    "operating_system": "Windows",
-    "python": "3.12.14",
-    "torch": "2.11.0+cpu",
-    "torch_geometric": "2.8.0.post1",
-    "numpy": "2.1.3",
-    "pandas": "2.2.3",
-    "scikit_learn": "1.6.1",
-    "seeds": [42, 43, 44, 45, 46]
+  "selected_protocol": {
+    "label_split": "subject-disjoint",
+    "primary_graph": "transductive, predictor features only",
+    "temporal_messages": "causal: current and earlier same-subject visits only",
+    "preprocessing": "fit on training rows only",
+    "normalization": "BatchNorm statistics from training nodes only",
+    "dropedge_rate": 0.0,
+    "uncertainty_threshold": "75th percentile of validation predictive entropy",
+    "cdr_in_primary_inputs": false
   },
   "cohorts": {
     "primary": {
       "sessions": 1435,
       "participants": 336,
       "diagnosis_counts": {"NC": 442, "MCI": 556, "AD": 437},
-      "data_sha256": "6EFDB3A54D7C888D5BA059D5E2ED7BD17CEAC573BC92C1BA75DFE2BBE8528FEF"
+      "row_split": {"train": 1134, "validation": 153, "test": 148},
+      "participant_split": {"validation": 34, "test": 34}
     },
     "cdr_complete_matched": {
       "sessions": 1367,
       "participants": 335,
       "excluded_missing_cdr_sessions": 68,
-      "diagnosis_counts": {"NC": 419, "MCI": 526, "AD": 422},
       "cdr_stage_counts": {"CDR_0": 394, "CDR_0_5": 715, "CDR_ge_1": 258},
       "row_split": {"train": 1079, "validation": 147, "test": 141},
-      "participant_split": {"train": 267, "validation": 34, "test": 34},
-      "filtered_split_sha256": "612837DCF75A5B0AC0326D89B6621A9B3D5D4199FF6D83716606B845BCF18B4A",
-      "data_sha256": "CA08444C85565C8FEE83F2F1ED651EB94D85B4A7D2CB137BE841CA3D54C0FC5D"
+      "participant_split": {"train": 267, "validation": 34, "test": 34}
     }
   },
   "experiments": {
-    "primary_diagnosis_reported": {
+    "primary_diagnosis": {
       "cohort": "primary",
-      "balanced_accuracy": {
-        "mean": 0.7851,
-        "sd": 0.0174,
-        "ci95": [0.7635, 0.8068]
+      "seed_stability": {
+        "balanced_accuracy": {"mean": 0.767536, "sd": 0.025632, "ci95": [0.735709, 0.799363]},
+        "recall": {"NC": 0.882609, "MCI": 0.653333, "AD": 0.766667}
       },
-      "recall": {"NC": 0.9435, "MCI": 0.6167, "AD": 0.7952},
-      "ensemble": {"balanced_accuracy": 0.7767, "macro_auc": 0.9176, "macro_f1": 0.7716}
+      "probability_ensemble": {
+        "balanced_accuracy": 0.780538,
+        "accuracy": 0.770270,
+        "macro_f1": 0.778372,
+        "macro_auc": 0.914929,
+        "recall": {"NC": 0.913043, "MCI": 0.666667, "AD": 0.761905}
+      }
     },
-    "primary_diagnosis_clean_environment_rerun": {
-      "cohort": "primary",
-      "balanced_accuracy": {
-        "mean": 0.7832,
-        "sd": 0.0176,
-        "ci95": [0.7614, 0.8050]
+    "nested_cross_validation": {
+      "balanced_accuracy": {"mean": 0.784095, "sd": 0.039603, "ci95": [0.734921, 0.833269]},
+      "macro_auc": {"mean": 0.922864, "sd": 0.016788, "ci95": [0.902020, 0.943709]},
+      "recall": {"NC": 0.905034, "MCI": 0.626561, "AD": 0.820690}
+    },
+    "strict_inductive_sensitivity": {
+      "seed_stability": {
+        "balanced_accuracy": {"mean": 0.762892, "sd": 0.027226, "ci95": [0.729086, 0.796697]},
+        "recall": {"NC": 0.873913, "MCI": 0.643333, "AD": 0.771429}
       },
-      "recall": {"NC": 0.9391, "MCI": 0.6200, "AD": 0.7905},
-      "ensemble": {"balanced_accuracy": 0.7767, "macro_auc": 0.9169},
-      "note": "Independent rerun in the verified environment; the difference from the reported mean is 0.0019."
+      "probability_ensemble": {
+        "balanced_accuracy": 0.770117,
+        "macro_auc": 0.914135,
+        "recall": {"NC": 0.891304, "MCI": 0.633333, "AD": 0.785714}
+      }
+    },
+    "fixed_test_ablations": {
+      "note": "Descriptive fixed-test ablations were not used to reselect the primary architecture.",
+      "no_temporal": {"balanced_accuracy_mean": 0.775176, "sd": 0.002564, "recall": {"NC": 0.886957, "MCI": 0.643333, "AD": 0.795238}},
+      "no_mlp": {"balanced_accuracy_mean": 0.768896, "sd": 0.014672, "recall": {"NC": 0.934783, "MCI": 0.576667, "AD": 0.795238}},
+      "population_gcn_only": {"balanced_accuracy_mean": 0.781222, "sd": 0.010915, "recall": {"NC": 0.856522, "MCI": 0.696667, "AD": 0.790476}}
     },
     "diagnosis_with_cdr_node_feature": {
       "cohort": "primary",
-      "target": "diagnosis",
       "cdr_role": "node feature only; population graph remains cognition-only",
-      "balanced_accuracy": {
-        "mean": 0.7864,
-        "sd": 0.0223,
-        "ci95": [0.7588, 0.8141]
-      },
-      "recall": {"NC": 0.9174, "MCI": 0.6467, "AD": 0.7952},
-      "source": "provided five-seed result artifact"
+      "balanced_accuracy": {"mean": 0.798551, "sd": 0.023123, "ci95": [0.769839, 0.827262]},
+      "recall": {"NC": 0.895652, "MCI": 0.700000, "AD": 0.800000}
     },
     "diagnosis_with_cdr_node_and_graph": {
       "cohort": "primary",
-      "target": "diagnosis",
-      "cdr_role": "node feature and cognition-plus-CDR population-graph feature",
-      "balanced_accuracy": {
-        "mean": 0.8046,
-        "sd": 0.0198,
-        "ci95": [0.7800, 0.8292]
-      },
-      "recall": {"NC": 0.9043, "MCI": 0.7000, "AD": 0.8095},
-      "source": "provided five-seed result artifact"
+      "cdr_role": "node feature and population-graph feature",
+      "balanced_accuracy": {"mean": 0.829482, "sd": 0.028467, "ci95": [0.794137, 0.864828]},
+      "recall": {"NC": 0.891304, "MCI": 0.806667, "AD": 0.790476}
     },
     "matched_diagnosis_no_cdr": {
       "cohort": "cdr_complete_matched",
-      "target": "diagnosis",
-      "cdr_role": "complete-case filter only; excluded from node features and graph construction",
-      "balanced_accuracy": {
-        "mean": 0.7898,
-        "sd": 0.0144,
-        "ci95": [0.7719, 0.8076]
-      },
-      "recall": {"NC": 0.9442, "MCI": 0.6105, "AD": 0.8146},
-      "ensemble": {"balanced_accuracy": 0.8129, "macro_auc": 0.9219, "macro_f1": 0.7996}
+      "cdr_role": "complete-case filter only; excluded from features and graph",
+      "balanced_accuracy": {"mean": 0.783492, "sd": 0.026191, "ci95": [0.750972, 0.816012]},
+      "recall": {"NC": 0.897674, "MCI": 0.677193, "AD": 0.775610},
+      "ensemble_balanced_accuracy": 0.790558
     },
     "matched_cdr_stage": {
       "cohort": "cdr_complete_matched",
-      "target": "cdr_stage",
-      "cdr_role": "target only; excluded from node features and graph construction",
-      "balanced_accuracy": {
-        "mean": 0.7740,
-        "sd": 0.0100,
-        "ci95": [0.7617, 0.7864]
-      },
-      "recall": {"CDR_0": 1.0000, "CDR_0_5": 0.5375, "CDR_ge_1": 0.7846},
-      "ensemble": {"balanced_accuracy": 0.7772, "macro_auc": 0.9131, "macro_f1": 0.7145}
+      "cdr_role": "target only; excluded from features and graph",
+      "balanced_accuracy": {"mean": 0.785806, "sd": 0.013460, "ci95": [0.769093, 0.802518]},
+      "recall": {"CDR_0": 0.988571, "CDR_0_5": 0.615000, "CDR_ge_1": 0.753846},
+      "ensemble_balanced_accuracy": 0.798077
     },
     "matched_target_difference": {
-      "diagnosis_minus_cdr_stage_mean_balanced_accuracy": 0.0157,
-      "interpretation": "The intervals overlap; this is a descriptive paired-protocol comparison, not a test of label equivalence."
+      "cdr_stage_minus_diagnosis_mean_balanced_accuracy": 0.002313,
+      "interpretation": "The intervals overlap; target definitions have essentially equal aggregate difficulty under the matched protocol."
     }
   }
 }

@@ -1,29 +1,31 @@
 {
-  "main_model": "python hybrid_gnn.py --single study_data_no_cdr.csv --out_dir results/main_model --target diagnosis --verbose",
+  "main_model": "python hybrid_gnn.py --single study_data_no_cdr.csv --out_dir results/main_model --target diagnosis --normalization masked_batch --temporal_direction causal --drop_edge_rate 0 --uncertainty_reference validation --verbose",
 
-  "nested_cv": "python hybrid_gnn.py --single study_data_no_cdr.csv --out_dir results/nested_cv --nested_cv --mci_decision_adjustment --no_explain --verbose",
+  "nested_cv": "python hybrid_gnn.py --single study_data_no_cdr.csv --out_dir results/nested_cv --nested_cv --normalization masked_batch --temporal_direction causal --drop_edge_rate 0 --uncertainty_reference validation --no_explain --verbose",
 
-  "inductive_analysis": "python hybrid_gnn.py --single study_data_no_cdr.csv --out_dir results/inductive --eval_mode inductive --verbose",
+  "inductive_analysis": "python hybrid_gnn.py --single study_data_no_cdr.csv --out_dir results/inductive --eval_mode inductive --normalization masked_batch --temporal_direction causal --drop_edge_rate 0 --uncertainty_reference validation --no_explain --verbose",
 
-  "ablation_no_temporal": "python hybrid_gnn.py --single study_data_no_cdr.csv --out_dir results/ablation_no_temporal --no_temporal_branch --verbose",
+  "ablation_no_temporal": "python hybrid_gnn.py --single study_data_no_cdr.csv --out_dir results/ablation_no_temporal --no_temporal_branch --normalization masked_batch --temporal_direction causal --drop_edge_rate 0 --uncertainty_reference validation --no_explain --verbose",
 
-  "ablation_no_mlp": "python hybrid_gnn.py --single study_data_no_cdr.csv --out_dir results/ablation_no_mlp --no_mlp_branch --verbose",
+  "ablation_no_mlp": "python hybrid_gnn.py --single study_data_no_cdr.csv --out_dir results/ablation_no_mlp --no_mlp_branch --normalization masked_batch --temporal_direction causal --drop_edge_rate 0 --uncertainty_reference validation --no_explain --verbose",
 
-  "ablation_population_gcn": "python hybrid_gnn.py --single study_data_no_cdr.csv --out_dir results/ablation_population_gcn --no_mlp_branch --no_temporal_branch --verbose",
+  "ablation_population_gcn": "python hybrid_gnn.py --single study_data_no_cdr.csv --out_dir results/ablation_population_gcn --no_mlp_branch --no_temporal_branch --normalization masked_batch --temporal_direction causal --drop_edge_rate 0 --uncertainty_reference validation --no_explain --verbose",
 
-  "cdr_node_feature_only": "python hybrid_gnn.py --single study_data_with_cdr.csv --out_dir results/cdr_node_feature_only --target diagnosis --split_file results/main_model/split_subject_ids.csv --verbose",
+  "cdr_node_feature_only": "python hybrid_gnn.py --single study_data_with_cdr.csv --out_dir results/cdr_node_feature_only --target diagnosis --split_file results/main_model/split_subject_ids.csv --normalization masked_batch --temporal_direction causal --drop_edge_rate 0 --uncertainty_reference validation --no_explain --verbose",
 
-  "cdr_node_and_edge_features": "python hybrid_gnn.py --single study_data_with_cdr.csv --out_dir results/cdr_node_and_edge_features --target diagnosis --edge_ablation cognition_cdr --split_file results/main_model/split_subject_ids.csv --verbose",
+  "cdr_node_and_edge_features": "python hybrid_gnn.py --single study_data_with_cdr.csv --out_dir results/cdr_node_and_edge_features --target diagnosis --edge_ablation cognition_cdr --split_file results/main_model/split_subject_ids.csv --normalization masked_batch --temporal_direction causal --drop_edge_rate 0 --uncertainty_reference validation --no_explain --verbose",
 
-  "cdr_matched_diagnosis": "python hybrid_gnn.py --single study_data_with_cdr.csv --out_dir results/cdr_matched_diagnosis --target diagnosis --require_cdr_complete --exclude_cdr_feature --split_file results/main_model/split_subject_ids.csv --no_explain --verbose",
+  "cdr_matched_diagnosis": "python hybrid_gnn.py --single study_data_with_cdr.csv --out_dir results/cdr_matched_diagnosis --target diagnosis --require_cdr_complete --exclude_cdr_feature --split_file results/main_model/split_subject_ids.csv --normalization masked_batch --temporal_direction causal --drop_edge_rate 0 --uncertainty_reference validation --no_explain --verbose",
 
-  "cdr_matched_target": "python hybrid_gnn.py --single study_data_with_cdr.csv --out_dir results/cdr_matched_target --target cdr --require_cdr_complete --split_file results/main_model/split_subject_ids.csv --no_explain --verbose",
+  "cdr_matched_target": "python hybrid_gnn.py --single study_data_with_cdr.csv --out_dir results/cdr_matched_target --target cdr --require_cdr_complete --split_file results/main_model/split_subject_ids.csv --normalization masked_batch --temporal_direction causal --drop_edge_rate 0 --uncertainty_reference validation --no_explain --verbose",
 
   "baseline_models": "python baseline_comparison.py --data_csv study_data_no_cdr.csv --out_dir results/baselines",
 
   "publication_validation": "python publication_validation.py --data_csv study_data_no_cdr.csv --split_csv results/main_model/split_subject_ids.csv --gnn_validation_probabilities results/main_model/validation_ensemble_probabilities.csv --gnn_test_probabilities results/main_model/ensemble_probabilities.csv --gnn_validation_seed_probabilities results/main_model/validation_seed_probabilities.csv --gnn_test_seed_probabilities results/main_model/test_seed_probabilities.csv --out_dir results/publication_validation --bootstrap_replicates 10000",
 
-  "explanation_faithfulness": "python hybrid_gnn.py --single study_data_no_cdr.csv --out_dir results/main_model --target diagnosis --split_file results/main_model/split_subject_ids.csv --load_checkpoints --no_explain --faithfulness_evidence_csv results/main_model/patient_evidence.csv --faithfulness_random_repeats 100 --verbose",
+  "paired_ablation_validation": "python paired_ablation_validation.py --reference_csv results/main_model/ensemble_probabilities.csv --ablation no_temporal=results/ablation_no_temporal/ensemble_probabilities.csv --ablation no_mlp=results/ablation_no_mlp/ensemble_probabilities.csv --ablation population_gcn_only=results/ablation_population_gcn/ensemble_probabilities.csv --out_json results/publication_validation/ablation_paired_bootstrap.json --bootstrap_replicates 10000 --seed 42",
+
+  "explanation_faithfulness": "python hybrid_gnn.py --single study_data_no_cdr.csv --out_dir results/main_model --target diagnosis --split_file results/main_model/split_subject_ids.csv --normalization masked_batch --temporal_direction causal --drop_edge_rate 0 --uncertainty_reference validation --load_checkpoints --no_explain --faithfulness_evidence_csv results/main_model/patient_evidence.csv --faithfulness_random_repeats 100 --verbose",
 
   "template_interpretation": "python bio_leaflet.py --results_dir results/main_model --data_csv study_data_no_cdr.csv --out_dir results/interpretations --verbose",
 
@@ -43,5 +45,9 @@
 
   "rag_evaluation": "python run_bioleaflet_rag_prototype.py --bioleaflets results/bioleaflets/bioleaflets.csv --knowledge_base bioleaflet_rag_knowledge_base.json --out_dir results/rag",
 
-  "verifier_stress_test": "python verifier_stress_test.py --results_dir results/main_model --data_csv study_data_no_cdr.csv --rag_answers results/rag/rag_answers.csv --rag_knowledge_base bioleaflet_rag_knowledge_base.json --out_dir results/verifier_stress"
+  "verifier_stress_test": "python verifier_stress_test.py --results_dir results/main_model --data_csv study_data_no_cdr.csv --rag_answers results/rag/rag_followup_answers.csv --rag_knowledge_base bioleaflet_rag_knowledge_base.json --out_dir results/verifier_stress",
+
+  "publication_figures": "python create_publication_figures.py --results_dir results/main_model --cdr_csv results/cdr_discordance/diagnosis_vs_cdr_agreement.csv --out_dir results/publication_figures",
+
+  "synthetic_smoke_test": "python synthetic_smoke_test.py"
 }

@@ -1,6 +1,6 @@
 {
   "n_leaflets": 148,
-  "n_answers": 783,
+  "n_answers": 784,
   "mean_evidence_per_answer": 3.0,
   "mean_top_retrieval_score": 1.0,
   "patient_fact_pass_rate": 1.0,
@@ -18,5 +18,5 @@
   "n_uncertainty_context": 148,
   "n_diagnostic_safety": 148,
   "n_mci_context": 148,
-  "n_counterfactual_context": 43
+  "n_counterfactual_context": 44
 }

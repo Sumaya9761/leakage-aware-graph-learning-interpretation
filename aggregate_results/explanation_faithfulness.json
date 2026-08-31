@@ -1,6 +1,6 @@
 {
   "design": {
-    "explained_nodes": 112,
+    "explained_nodes": 114,
     "correctly_classified_only": true,
     "baseline_accuracy_on_explained_nodes": 1.0,
     "features_removed_per_node": [
@@ -12,54 +12,54 @@
     "seed": 42
   },
   "top_ranked_deletion": {
-    "mean_predicted_class_probability_drop": 0.047214072197675705,
-    "median_predicted_class_probability_drop": 0.04960054159164429,
-    "fraction_positive_probability_drop": 1.0,
-    "prediction_flip_rate": 0.044642857142857144,
-    "balanced_accuracy": 0.9599832390530065
+    "mean_predicted_class_probability_drop": 0.04983635991811752,
+    "median_predicted_class_probability_drop": 0.04965510964393616,
+    "fraction_positive_probability_drop": 0.9824561403508771,
+    "prediction_flip_rate": 0.09649122807017543,
+    "balanced_accuracy": 0.9040674603174604
   },
   "matched_random_deletion": {
     "mean_predicted_class_probability_drop": {
-      "mean": 0.002955209909778205,
-      "sd": 0.0009462093480743281,
+      "mean": 0.004003366635297425,
+      "sd": 0.0012081874158266803,
       "ci95": [
-        0.0012666202761465683,
-        0.004680449597071854
+        0.001185069457278587,
+        0.006612341396976259
       ]
     },
     "median_predicted_class_probability_drop": {
-      "mean": 0.0031342193484306335,
-      "sd": 0.0010042467622219627,
+      "mean": 0.0036864650249481203,
+      "sd": 0.0011803363468187572,
       "ci95": [
-        0.0014337226748466492,
-        0.004937177151441573
+        0.001525125652551651,
+        0.005745737254619598
       ]
     },
     "fraction_positive_probability_drop": {
-      "mean": 0.6229464285714286,
-      "sd": 0.03804733104448101,
+      "mean": 0.6349999999999999,
+      "sd": 0.035808974578993506,
       "ci95": [
-        0.553125,
-        0.6968749999999999
+        0.5614035087719298,
+        0.7017543859649122
       ]
     },
     "prediction_flip_rate": {
-      "mean": 0.0030357142857142857,
-      "sd": 0.004436239462999908,
+      "mean": 0.017631578947368422,
+      "sd": 0.010166864708019715,
       "ci95": [
         0.0,
-        0.008928571428571428
+        0.03508771929824561
       ]
     },
     "balanced_accuracy": {
-      "mean": 0.9973266289545358,
-      "sd": 0.003932946606000656,
+      "mean": 0.9840158730158731,
+      "sd": 0.00924397143752512,
       "ci95": [
-        0.9915880997276346,
+        0.9678571428571429,
         1.0
       ]
     }
   },
-  "top_minus_random_mean_probability_drop": 0.0442588622878975,
+  "top_minus_random_mean_probability_drop": 0.045832993282820096,
   "empirical_one_sided_p": 0.009900990099009901
 }
